@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>老師控制台 — AI 怪物塔防戰</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <header class="top-nav">
+    <div class="brand">
+      <div class="brand-icon">👩‍🏫</div>
+      <div>
+        <div>AI 怪物塔防戰 — 老師統一創房與即時觀戰控制台</div>
+        <div style="font-size: 0.74rem; color: var(--text-muted); font-weight: 500;">
+          國一 / 國二嚴格分房管理 · 學生程式觀念即時追蹤
+        </div>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <a href="/" class="btn btn-sm">🎮 前往學生入口頁</a>
+      <button id="btn-teacher-logout" class="btn btn-sm btn-danger hidden" type="button">登出</button>
+    </div>
+  </header>
+
+  <!-- Teacher Login -->
+  <main id="view-teacher-login" class="center-page" style="max-width: 480px;">
+    <div class="card">
+      <span class="badge badge-amber" style="margin-bottom: 10px;">TEACHER PORTAL</span>
+      <h1 style="margin: 0 0 8px;">老師控制台登入</h1>
+      <p class="subtitle">
+        登入後可統一建立「國一」與「國二」專屬房間並發放房號，同時即時觀看所有學生的戰場畫面與程式設定。
+      </p>
+
+      <div id="teacher-login-error" class="alert alert-error hidden"></div>
+
+      <form id="teacher-login-form">
+        <div class="form-group">
+          <label class="form-label" for="teacher-pin-input">教師密碼 (PIN)</label>
+          <input
+            id="teacher-pin-input"
+            class="input"
+            type="password"
+            placeholder="請輸入教師密碼"
+            required
+          >
+        </div>
+        <button class="btn btn-primary btn-lg" type="submit" style="width: 100%;">
+          進入老師控制台 →
+        </button>
+      </form>
+
+      <div class="alert alert-info" style="margin-top: 16px; margin-bottom: 0; font-size: 0.84rem;">
+        💡 測試預設密碼為 <code>1234</code>；正式部署到 Render 時請於環境變數設定 <code>TEACHER_PIN</code>。
+      </div>
+    </div>
+  </main>
+
+  <!-- Teacher Dashboard -->
+  <main id="view-teacher-dash" class="teacher-shell hidden">
+    <div class="teacher-top-grid">
+      <!-- Quick Setup + Overview -->
+      <section class="card">
+        <h2 style="margin: 0 0 8px; font-size: 1.2rem;">⚡ 快速教學開房</h2>
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 0;">
+          針對「兩位國一 + 一位國二、不能跨年級共同玩」的班級配置，一鍵開好兩間獨立房間：
+        </p>
+        <button id="btn-quick-setup" class="btn btn-emerald btn-lg" type="button" style="width: 100%; margin-bottom: 14px;">
+          ⚡ 一鍵建立：國一雙人房 + 國二單人房
+        </button>
+
+        <div class="concept-cards">
+          <div class="concept-mini">
+            <h4 style="color: var(--g7-accent);">🟢 國一防線</h4>
+            <p id="stat-g7-count" style="font-size: 1.1rem; font-weight: 800; color: var(--text-main);">0 間房</p>
+          </div>
+          <div class="concept-mini">
+            <h4 style="color: var(--g8-accent);">🟣 國二防線</h4>
+            <p id="stat-g8-count" style="font-size: 1.1rem; font-weight: 800; color: var(--text-main);">0 間房</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Custom Room Creator -->
+      <section class="card">
+        <h2 style="margin: 0 0 12px; font-size: 1.2rem;">🛠️ 自訂建立房間（由老師發給學生房號）</h2>
+        <form id="create-room-form">
+          <div style="display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label" for="create-name">房間名稱</label>
+              <input id="create-name" class="input" type="text" placeholder="例如：國一 A 組防線" maxlength="32">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create-code">自訂房號（留空自動產生）</label>
+              <input id="create-code" class="input input-code" type="text" placeholder="例如 101" maxlength="12" style="padding: 9px 12px; font-size: 1rem;">
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+            <div class="form-group">
+              <label class="form-label" for="create-grade">年級隔離限制</label>
+              <select id="create-grade" class="select">
+                <option value="G7">🟢 國一專屬 (G7)</option>
+                <option value="G8">🟣 國二專屬 (G8)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create-max-players">遊玩人數模式</label>
+              <select id="create-max-players" class="select">
+                <option value="2">👥 兩人輪流合作 (2人)</option>
+                <option value="1">🧑 單人獨立挑戰 (1人)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create-difficulty">怪物難度</label>
+              <select id="create-difficulty" class="select">
+                <option value="standard">標準教學難度</option>
+                <option value="challenge">進階挑戰難度</option>
+              </select>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" type="submit">＋ 建立房間並產生房號</button>
+        </form>
+      </section>
+    </div>
+
+    <!-- Segregated Classroom Monitor -->
+    <div class="grade-sections">
+      <section class="grade-column g7">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="margin: 0; color: #6ee7b7;">🟢 國一教室防線（不可與國二混房）</h3>
+          <span class="badge badge-g7">G7 專屬區</span>
+        </div>
+        <div id="rooms-g7"></div>
+      </section>
+
+      <section class="grade-column g8">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <h3 style="margin: 0; color: #c4b5fd;">🟣 國二教室防線（不可與國一混房）</h3>
+          <span class="badge badge-g8">G8 專屬區</span>
+        </div>
+        <div id="rooms-g8"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Spectator Modal -->
+  <div id="spectator-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+        <div>
+          <span id="spec-grade-badge" class="badge badge-g7">國一</span>
+          <span id="spec-code-badge" class="badge badge-cyan">房號 ---</span>
+          <h2 id="spec-title" style="display: inline-block; margin: 0 0 0 8px; font-size: 1.25rem;">即時觀戰</h2>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button id="spec-btn-pause" class="btn btn-sm" type="button">⏸ 暫停/繼續</button>
+          <button id="spec-btn-reset" class="btn btn-sm btn-amber" type="button">🔄 重置戰場</button>
+          <button id="spec-btn-close" class="btn btn-sm btn-danger" type="button">✕ 關閉視窗</button>
+        </div>
+      </div>
+
+      <!-- Teacher Broadcast Input -->
+      <form id="spec-banner-form" style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <input id="spec-banner-input" class="input" type="text" placeholder="輸入給這間教室學生的即時提醒（將直接跳出在學生遊戲畫面上方）..." maxlength="80">
+        <button class="btn btn-amber" type="submit" style="white-space: nowrap;">📢 發送提醒</button>
+      </form>
+
+      <div class="battle-workspace">
+        <div>
+          <div class="canvas-frame">
+            <canvas id="spec-canvas"></canvas>
+          </div>
+          <div id="spec-stats-row" style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;"></div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div class="control-box">
+            <h4 style="margin: 0 0 8px;">🤖 學生目前的砲塔 AI 設定</h4>
+            <div id="spec-turrets-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+          </div>
+          <div class="control-box">
+            <h4 style="margin: 0 0 8px;">📜 即時操作與程式學習紀錄</h4>
+            <div id="spec-log-list" class="log-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-stack" class="toast-stack"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/renderer.js"></script>
+  <script src="/js/teacher.js"></script>
+</body>
+</html>
+
