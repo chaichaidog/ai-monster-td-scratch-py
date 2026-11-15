@@ -316,43 +316,55 @@
 
         <!-- Tab 2: My Blocks (Functions) -->
         <div id="tab-fn" class="control-box hidden">
-          <div class="form-label">團隊函式積木庫（可一鍵套用多座砲塔，對應 Python <code>def</code>）</div>
+          <div class="form-label">團隊函式積木庫（存成共用戰術模組，可一鍵套用多座砲塔）</div>
           <div id="fn-list" class="fn-list"></div>
 
           <div style="border-top: 1px solid var(--border); padding-top: 10px;">
             <div style="font-size: 0.82rem; font-weight: 700; margin-bottom: 6px; color: var(--emerald);">
-              ＋ 把目前砲塔的積木組合存成「函式積木」：
+              ＋ 把目前砲塔的積木組合存成「共用函式積木」：
             </div>
             <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px;">
-              <input id="input-fn-name" class="input" type="text" placeholder="函式名稱（如 ice_patrol）" maxlength="20" style="padding: 8px 10px;">
-              <button id="btn-save-fn" class="btn btn-emerald btn-sm" type="button">💾 儲存積木函式</button>
+              <input id="input-fn-name" class="input" type="text" placeholder="取個名字（例如：冰霜巡邏、破盾連發）" maxlength="20" style="padding: 8px 10px;">
+              <button id="btn-save-fn" class="btn btn-emerald btn-sm" type="button" style="white-space: nowrap;">💾 儲存積木組</button>
             </div>
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">
-              修改同名函式時，所有呼叫該函式的砲塔會同步升級！
+              💡 支援中文命名！修改同名積木組時，所有呼叫該模組的砲塔會同步升級（對應 Python 的 <code>def</code>）。
             </div>
           </div>
         </div>
 
         <!-- Tab 3: Monster Intel & Scratch->Python Cheat Sheet -->
         <div id="tab-guide" class="control-box hidden">
-          <div class="form-label">👾 AI 怪物情報（設計「如果」積木的參考依據）</div>
-          <div id="monster-guide-grid" class="monster-guide-grid" style="margin-bottom: 10px;"></div>
-          <div class="form-label">📚 Scratch 積木 ↔ Python 語法對照卡</div>
-          <div class="code-preview" style="font-size: 0.76rem; line-height: 1.5;">
-<span class="cmt"># 🟦 動作積木「移動到 (x, y)」 &amp; 「巡邏」</span>
-turret.<span class="fn-tok">move_to</span>(<span class="num">390</span>, <span class="num">270</span>)
-turret.<span class="fn-tok">patrol</span>(axis=<span class="str">"x"</span>, dist=<span class="num">50</span>)
-
-<span class="cmt"># 🟧 變數積木「設為」 &amp; 「增加」</span>
-damage <span class="kw">=</span> <span class="num">30</span>   <span class="cmt"># 設為 30</span>
-damage <span class="kw">+=</span> <span class="num">10</span>  <span class="cmt"># 增加 10</span>
-
-<span class="cmt"># 🟨 控制積木「如果...那麼...否則」</span>
-<span class="kw">if</span> monster.shield &gt; <span class="num">0</span>: ... <span class="kw">else</span>: ...
-
-<span class="cmt"># 🩷 重複積木「重複 N 次」 &amp; 🟩「我的函式」</span>
-<span class="kw">for</span> i <span class="kw">in</span> <span class="fn-tok">range</span>(<span class="num">3</span>): ...
-<span class="kw">def</span> <span class="fn-tok">shield_breaker</span>(dmg=<span class="num">30</span>, rate=<span class="num">1.5</span>): ...</div>
+          <div class="form-label">👾 AI 怪物圖鑑與弱點情報（設計「如果 ＜條件＞」積木必看）</div>
+          <div id="monster-guide-grid" class="monster-guide-grid" style="margin-bottom: 12px;"></div>
+          <div class="form-label">📚 Scratch 積木 ↔ 白話效果 ↔ Python 對照卡</div>
+          <div class="cheat-sheet-list">
+            <div class="cheat-row">
+              <span class="cheat-pill sb-motion">📍 移動／巡邏</span>
+              <span class="cheat-desc">砲塔飛到座標或來回巡邏</span>
+              <code class="cheat-py">turret.move_to(390, 270)</code>
+            </div>
+            <div class="cheat-row">
+              <span class="cheat-pill sb-var">📦 變數設為／增加</span>
+              <span class="cheat-desc">設定傷害、攻速或往上累加</span>
+              <code class="cheat-py">damage = 30 / damage += 10</code>
+            </div>
+            <div class="cheat-row">
+              <span class="cheat-pill sb-cond">🔀 如果…那麼…否則</span>
+              <span class="cheat-desc">遇到護盾怪、快怪或 BOSS 優先打</span>
+              <code class="cheat-py">if monster.shield &gt; 0: ... else:</code>
+            </div>
+            <div class="cheat-row">
+              <span class="cheat-pill sb-loop">🔁 重複 N 次</span>
+              <span class="cheat-desc">連射同一隻怪，或掃描多隻怪</span>
+              <code class="cheat-py">for i in range(3):</code>
+            </div>
+            <div class="cheat-row">
+              <span class="cheat-pill sb-fn">🧩 我的函式</span>
+              <span class="cheat-desc">把常用招式存起來，多塔共用</span>
+              <code class="cheat-py">def 破盾連發():</code>
+            </div>
+          </div>
         </div>
 
         <button id="btn-deploy-turret" class="btn btn-primary" type="button" style="width: 100%;">
@@ -361,9 +373,9 @@ damage <span class="kw">+=</span> <span class="num">10</span>  <span class="cmt"
 
         <div>
           <div style="font-size: 0.78rem; color: var(--amber); font-weight: 700; margin-bottom: 4px;">
-            🐍 Python 魔法對照視窗（沒學過也能看懂！滑鼠指到程式碼可看中文翻譯）：
+            🐍 Python 魔法即時翻譯機（左邊是 Python 寫法，右邊 # 是中文翻譯）：
           </div>
-          <div id="code-preview" class="code-preview" style="white-space: pre;"></div>
+          <div id="code-preview" class="code-preview" style="white-space: pre-wrap;"></div>
         </div>
       </div>
     </div>

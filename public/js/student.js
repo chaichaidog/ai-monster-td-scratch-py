@@ -174,6 +174,16 @@
     btnSoundToggle.textContent = muted ? '🔇 靜音' : '🔊 音效開';
   });
 
+  function getMonsterCounterTip(m) {
+    if (m.isBoss) return '⚠️ 魔王警報：用「如果＜BOSS＞」集中火力並開大招！';
+    if (m.type === 'splitter') return '👾 會分裂小怪：用「⚡ 連鎖閃電」一次電光！';
+    if (m.type === 'gold_slime') return `🪙 賞金寶怪：打死直接賺 ${m.coins} 金幣，用「如果＜跑超快＞」攔截！`;
+    if (m.shield > 0) return '🛡️ 有能量盾：用「⚡ 連鎖閃電」或「如果＜有護盾＞」快速破盾！';
+    if (m.speed >= 90) return '💨 跑得飛快：建議用「❄️ 冰霜緩速彈」凍住減速！';
+    if (m.hp >= 180) return '🧱 超厚裝甲：搭配「爆裂電漿砲」＋「火力變數增加」硬打！';
+    return '🎯 標準敵軍：一般砲塔射擊即可穩定清除';
+  }
+
   function renderMonsterGuide() {
     if (!meta || !meta.monsterTypes) return;
     monsterGuideGrid.innerHTML = '';
@@ -182,13 +192,20 @@
       card.className = 'monster-guide-card';
       const title = document.createElement('strong');
       title.style.color = m.color;
-      title.textContent = `${m.name} [${m.tag}]`;
+      title.textContent = `${m.name}（${m.tag}）`;
       const stats = document.createElement('div');
-      stats.style.color = 'var(--text-muted)';
-      stats.style.marginTop = '3px';
-      stats.textContent = `hp: ${m.hp} · shield: ${m.shield} · speed: ${m.speed} · 🪙${m.coins || 5}`;
+      stats.style.color = '#cbd5e1';
+      stats.style.marginTop = '4px';
+      stats.style.fontSize = '0.75rem';
+      stats.textContent = `❤️ 血量 ${m.hp} ｜ 🛡️ 護盾 ${m.shield} ｜ 💨 跑速 ${m.speed} ｜ 🪙 +${m.coins || 5}`;
+      const tip = document.createElement('div');
+      tip.style.color = '#7dd3fc';
+      tip.style.marginTop = '4px';
+      tip.style.fontSize = '0.72rem';
+      tip.textContent = getMonsterCounterTip(m);
       card.appendChild(title);
       card.appendChild(stats);
+      card.appendChild(tip);
       monsterGuideGrid.appendChild(card);
     });
   }
@@ -461,6 +478,10 @@
     document.getElementById('tab-scratch').classList.toggle('hidden', tabName !== 'scratch');
     document.getElementById('tab-fn').classList.toggle('hidden', tabName !== 'fn');
     document.getElementById('tab-guide').classList.toggle('hidden', tabName !== 'guide');
+    btnDeployTurret.classList.toggle('hidden', tabName !== 'scratch');
+    if (tabName !== 'scratch') {
+      setMapPickMode(null);
+    }
   }
 
   codeTabs.forEach((tab) => {
@@ -984,8 +1005,11 @@
         row.appendChild(createBlockActionButtons(idx, b.id, canEdit));
         blockEl.appendChild(row);
       } else if (b.type === 'call_fn') {
-        row.appendChild(document.createTextNode('🧩 呼叫函式'));
-        const fnOpts = fns.map((f) => [f.id, `${f.name}()`]);
+        row.appendChild(document.createTextNode('🧩 套用模組'));
+        const fnOpts = fns.map((f) => [
+          f.id,
+          f.label && f.label !== f.name ? `${f.label} (${f.name})` : f.name
+        ]);
         const selectedFn = fns.find((f) => f.id === b.fnId || f.name === b.fnId) || fns[0];
         const fnSel = makeSelect(fnOpts, selectedFn ? selectedFn.id : b.fnId, !canEdit, (val) => {
           b.fnId = val;
@@ -996,11 +1020,11 @@
         const dmgInp = makeNumInput(b.argDmg, 10, 90, 5, !canEdit, (val) => {
           b.argDmg = val === '' ? null : Number(val);
           markDraftEdited(b.id, false);
-        }, selectedFn ? String(selectedFn.damage) : 'dmg');
+        }, selectedFn ? `預設${selectedFn.damage}` : '預設');
         const rateInp = makeNumInput(b.argRate, 0.5, 4.0, 0.25, !canEdit, (val) => {
           b.argRate = val === '' ? null : Number(val);
           markDraftEdited(b.id, false);
-        }, selectedFn ? String(selectedFn.fireRate) : 'rate');
+        }, selectedFn ? `預設${selectedFn.fireRate}` : '預設');
 
         row.appendChild(fnSel);
         row.appendChild(document.createTextNode('傷害'));
@@ -1093,11 +1117,11 @@
   btnSaveFn.addEventListener('click', () => {
     const cleanName = inputFnName.value.trim();
     if (!cleanName) {
-      showToast('請先輸入函式名稱（例如：ice_patrol）');
+      showToast('請先幫這組積木取個名字（例如：冰霜巡邏）');
       return;
     }
     if (workspaceBlocks.length === 0) {
-      showToast('請先在 Scratch 積木區放至少 1 塊積木，才能儲存成函式！');
+      showToast('請先在 Scratch 積木區放至少 1 塊積木，才能儲存成共用模組！');
       return;
     }
     const cleanBlocks = Transpiler.sanitizeBlocks(workspaceBlocks).filter((b) => b.type !== 'call_fn');
@@ -1115,7 +1139,7 @@
         }
         inputFnName.value = '';
         lastFnListKey = '';
-        showToast(`🧩 已儲存函式積木 def ${res.fn.name}()！可在「我的函式」一鍵套用其他砲塔！`);
+        showToast(`🧩 已儲存共用模組「${res.fn.label || res.fn.name}」！可在「我的函式積木」一鍵套用其他砲塔！`);
       }
     );
   });
@@ -1299,16 +1323,26 @@
     if (!turret) return;
     editorTurretTitle.textContent = `${turret.name} — ${turret.roleHint}`;
     if (turret.boundFunctionName) {
-      editorBoundFn.textContent = `def ${turret.boundFunctionName}()`;
+      const fns = roomState && roomState.game && Array.isArray(roomState.game.functions)
+        ? roomState.game.functions
+        : [];
+      const matched = fns.find((f) => f.id === turret.boundFunctionId || f.name === turret.boundFunctionName);
+      editorBoundFn.textContent = `🧩 套用模組：${matched ? (matched.label || matched.name) : turret.boundFunctionName}`;
       editorBoundFn.classList.remove('hidden');
     } else {
       editorBoundFn.classList.add('hidden');
     }
   }
 
+  function formatFnLoopText(fn) {
+    if (fn.loopMode === 'burst') return `🔁 連發 ${fn.loopCount} 下`;
+    if (fn.loopMode === 'multi') return `📡 同時掃 ${fn.loopCount} 隻`;
+    return '🎯 單發射擊';
+  }
+
   function renderFunctionList(functions, turret, canEdit) {
     const key = `${canEdit}|${turret ? turret.boundFunctionId : ''}|` + functions.map((f) =>
-      `${f.id}:${f.name}:${f.damage}:${f.fireRate}:${f.weapon}:${f.loopMode}:${f.loopCount}`
+      `${f.id}:${f.name}:${f.label}:${f.damage}:${f.fireRate}:${f.weapon}:${f.loopMode}:${f.loopCount}`
     ).join('|');
     if (key === lastFnListKey) return;
     lastFnListKey = key;
@@ -1320,25 +1354,39 @@
       row.className = `fn-item ${isBound ? 'bound' : ''}`;
 
       const info = document.createElement('div');
+      info.className = 'fn-info';
+
+      const titleRow = document.createElement('div');
+      titleRow.className = 'fn-title-row';
+
       const title = document.createElement('strong');
-      const wShort = meta && meta.weapons && meta.weapons[fn.weapon] ? meta.weapons[fn.weapon].short : fn.weapon;
-      title.textContent = `🧩 ${fn.name}() · def ${fn.name}(dmg=${fn.damage}, rate=${fn.fireRate})`;
+      title.textContent = `🧩 ${fn.label || fn.name}`;
       title.style.color = 'var(--emerald)';
+
+      const pyPill = document.createElement('span');
+      pyPill.className = 'fn-py-pill';
+      pyPill.textContent = `Python: def ${fn.name}()`;
+
+      titleRow.appendChild(title);
+      titleRow.appendChild(pyPill);
+
+      const wShort = meta && meta.weapons && meta.weapons[fn.weapon] ? meta.weapons[fn.weapon].short : fn.weapon;
       const desc = document.createElement('div');
       desc.style.fontSize = '0.75rem';
-      desc.style.color = 'var(--text-muted)';
-      desc.textContent = `${wShort} · ${fn.label || fn.name} · loop=${fn.loopMode}×${fn.loopCount}`;
-      info.appendChild(title);
+      desc.style.color = '#cbd5e1';
+      desc.style.marginTop = '4px';
+      desc.textContent = `${wShort} ｜ 💥 傷害 ${fn.damage} ｜ ⏱️ 攻速 ${fn.fireRate} ｜ ${formatFnLoopText(fn)}`;
+
+      info.appendChild(titleRow);
       info.appendChild(desc);
 
       const btnGroup = document.createElement('div');
-      btnGroup.style.display = 'flex';
-      btnGroup.style.gap = '6px';
+      btnGroup.className = 'fn-actions';
 
       const loadBtn = document.createElement('button');
       loadBtn.type = 'button';
       loadBtn.className = 'btn btn-sm';
-      loadBtn.textContent = '載入積木';
+      loadBtn.textContent = '載入編輯';
       loadBtn.disabled = !canEdit;
       loadBtn.addEventListener('click', () => {
         const blocksToLoad = fn.blocks && fn.blocks.length > 0
@@ -1352,7 +1400,7 @@
         switchTab('scratch');
         renderWorkspaceBlocks();
         updateScratchPreview();
-        showToast(`已載入「${fn.name}」的積木組到工作區，可修改後覆蓋儲存或套用！`);
+        showToast(`已載入「${fn.label || fn.name}」的積木到工作區，改完按儲存就會全部塔同步升級！`);
       });
 
       const applyBtn = document.createElement('button');
@@ -1366,14 +1414,14 @@
           { turretId: selectedTurretId, functionId: fn.id },
           (res) => {
             if (!res || !res.ok) {
-              showToast((res && res.error) || '套用函式失敗');
+              showToast((res && res.error) || '套用模組失敗');
               return;
             }
             dirtyDraft = false;
             lastRenderedBlocksKey = '';
             sound.playBlockSnap();
             switchTab('scratch');
-            showToast(`🧩 ${selectedTurretId} 已呼叫 ${fn.name}()！下方可查看 Python 函式呼叫。`);
+            showToast(`🧩 ${selectedTurretId} 已套用「${fn.label || fn.name}」！底下可看到 Python 怎麼呼叫它。`);
           }
         );
       });

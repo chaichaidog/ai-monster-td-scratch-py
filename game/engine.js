@@ -1365,9 +1365,12 @@ function saveFunctionFromPython(state, pythonCode, existingId = null) {
 }
 
 function saveFunctionFromBlocks(state, { id, name, blocks } = {}) {
-  const rawName = String(name || '').trim().replace(/[^\w\u4e00-\u9fa5]/g, '').slice(0, 20);
+  let rawName = String(name || '').trim().replace(/[^\w\u4e00-\u9fa5]/g, '').slice(0, 20);
   if (!rawName) {
-    return { ok: false, error: '請為自訂積木函式取一個名稱（例如 fast_guard）' };
+    return { ok: false, error: '請為自訂積木函式取一個名稱（例如：冰霜巡邏）' };
+  }
+  if (/^\d/.test(rawName)) {
+    rawName = `模組_${rawName}`.slice(0, 20);
   }
   const transpiled = ScratchTranspiler.blocksToConfig(blocks, state.functions);
   const sanitized = sanitizeTurretConfig(transpiled);

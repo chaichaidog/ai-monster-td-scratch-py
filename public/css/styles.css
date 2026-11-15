@@ -960,7 +960,62 @@ button, input, select {
 .py-hi-tag {
   color: #fde047;
   font-weight: 700;
-  font-size: 0.76rem;
+  font-size: 0.75rem;
+}
+
+.py-tr {
+  color: #7dd3fc;
+  opacity: 0.88;
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+/* Scratch <-> Python Visual Cheat Sheet */
+.cheat-sheet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cheat-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    "pill desc"
+    "py py";
+  align-items: center;
+  gap: 4px 8px;
+  background: #070d1b;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+}
+
+.cheat-pill {
+  grid-area: pill;
+  color: #fff;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.cheat-desc {
+  grid-area: desc;
+  font-size: 0.77rem;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.cheat-py {
+  grid-area: py;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  color: #7dd3fc;
+  background: rgba(15, 23, 42, 0.85);
+  padding: 3px 7px;
+  border-radius: 5px;
 }
 
 @keyframes pyFlash {
@@ -1081,7 +1136,7 @@ input[type="range"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 175px;
+  max-height: 225px;
   overflow-y: auto;
   margin-bottom: 10px;
 }
@@ -1090,12 +1145,46 @@ input[type="range"] {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
-  padding: 8px 10px;
+  padding: 9px 11px;
   border-radius: 8px;
   font-size: 0.84rem;
+}
+
+.fn-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.fn-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fn-py-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.69rem;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.fn-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.fn-actions .btn {
+  white-space: nowrap;
+  padding: 6px 10px;
 }
 
 .fn-item.bound {

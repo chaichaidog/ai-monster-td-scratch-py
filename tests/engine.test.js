@@ -283,6 +283,11 @@ test('Scratch blocks transpiler: move, patrol, weapon, set/add variables, highli
   const html = Scratch.blocksToHighlightedPythonHtml(blocks, [], 'T1', 'b_move');
   assert.match(html, /py-code-line is-highlighted/);
   assert.match(html, /叫砲塔飛到座標 \(390, 165\)/);
+  assert.match(html, /py-tr/);
+  assert.match(html, /連鎖閃電/);
+  assert.match(html, /每次傷害/);
+  assert.match(html, /怪物有護盾/);
+  assert.match(html, /重複動作 2 次/);
   assert.match(html, /title="/);
 });
 
@@ -318,6 +323,16 @@ test('Engine Scratch blocks deployment, turret patrol movement, weapons, skills,
   });
   assert.equal(fnRes.ok, true);
   assert.equal(fnRes.fn.weapon, 'plasma');
+
+  const zhFnRes = Engine.saveFunctionFromBlocks(gs, {
+    name: '1號冰霜巡邏',
+    blocks: [
+      { id: 'zw', type: 'set_weapon', weapon: 'frost' },
+      { id: 'zd', type: 'set_var', varName: 'damage', op: 'set', value: 22 }
+    ]
+  });
+  assert.equal(zhFnRes.ok, true);
+  assert.equal(zhFnRes.fn.name, '模組_1號冰霜巡邏');
 
   gs.coins = 150;
   gs.baseHp = 60;
