@@ -1270,3 +1270,32 @@ input[type="range"] {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.bounty-bar {
+  margin-top: 9px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, rgba(251, 191, 36, 0.12), rgba(56, 189, 248, 0.08));
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+}
+
+.canvas-frame canvas.pick-cursor {
+  cursor: crosshair;
+}
+
+.rank-pill-big {
+  display: inline-block;
+  padding: 4px 16px;
+  border-radius: 999px;
+  font-size: 1.25rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  background: linear-gradient(135deg, #fbbf24, #f97316);
+  color: #0f172a;
+  margin-bottom: 8px;
+}
+

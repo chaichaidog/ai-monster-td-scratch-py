@@ -55,7 +55,8 @@ app.get('/api/meta', (_req, res) => {
     conditionOptions: constants.CONDITION_OPTIONS,
     fallbackTargets: constants.FALLBACK_TARGETS,
     loopModes: constants.LOOP_MODES,
-    quickTips: constants.QUICK_TIPS
+    quickTips: constants.QUICK_TIPS,
+    pythonBounties: constants.PYTHON_BOUNTIES
   });
 });
 
@@ -185,6 +186,16 @@ io.on('connection', (socket) => {
   socket.on('teacher:send_banner', ({ code, message } = {}, ack) => {
     if (socket.data.role !== 'teacher') return;
     const res = roomManager.setTeacherBanner(code, message);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
+  });
+
+  socket.on('teacher:spawn_gold_slime', ({ code } = {}, ack) => {
+    if (socket.data.role !== 'teacher') return;
+    const res = roomManager.handleTeacherSpawnGoldSlime(code);
     if (res.ok) {
       broadcastRoomState(res.room);
       broadcastTeacherDashboard();
@@ -372,6 +383,25 @@ io.on('connection', (socket) => {
       broadcastTeacherDashboard();
     }
     if (typeof ack === 'function') ack({ ok: res.ok });
+  });
+
+  socket.on('student:collect_pickup', ({ pickupId } = {}, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.handleCollectPickup(socket.data.roomCode, socket.data.playerId, pickupId);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
+  });
+
+  socket.on('student:map_ping', ({ x, y, label } = {}, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.handleMapPing(socket.data.roomCode, socket.data.playerId, { x, y, label });
+    if (res.ok) {
+      broadcastRoomState(res.room);
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
   });
 
   socket.on('student:restart_game', (_payload, ack) => {

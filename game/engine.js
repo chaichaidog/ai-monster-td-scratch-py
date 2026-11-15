@@ -1,4 +1,6 @@
 const {
+  MAP_WIDTH,
+  MAP_HEIGHT,
   PATH_WAYPOINTS,
   TURRET_SLOTS,
   WEAPONS,
@@ -9,7 +11,8 @@ const {
   CONDITION_OPTIONS,
   FALLBACK_TARGETS,
   LOOP_MODES,
-  DEFAULT_FUNCTIONS
+  DEFAULT_FUNCTIONS,
+  PYTHON_BOUNTIES
 } = require('./constants');
 const PythonTurretParser = require('../public/js/pythonParser');
 const ScratchTranspiler = require('../public/js/scratchTranspiler');
@@ -294,8 +297,12 @@ function createGameState({ grade = 'G7', maxWaves = WAVES.length, difficulty = '
     functions,
     monsters: [],
     projectiles: [],
+    pickups: [],
+    pickupSpawnTimer: 3.5,
+    pings: [],
     recentEvents: [],
     achievements: [],
+    completedBounties: [],
     conceptsLearned: {
       variables: false,
       conditionals: false,
@@ -308,7 +315,9 @@ function createGameState({ grade = 'G7', maxWaves = WAVES.length, difficulty = '
       loopBursts: 0,
       functionApps: 0,
       editsCount: 0,
-      skillsUsed: 0
+      skillsUsed: 0,
+      bountiesCleared: 0,
+      pickupsCollected: 0
     }
   };
 }
@@ -317,6 +326,178 @@ function unlockAchievement(state, id, title) {
   if (state.achievements.some((a) => a.id === id)) return;
   state.achievements.push({ id, title, at: Math.round(state.elapsed) });
   pushEvent(state, { kind: 'achievement', title });
+}
+
+function checkBountyProgress(state) {
+  if (!Array.isArray(PYTHON_BOUNTIES)) return;
+  const boundFnCount = state.turrets.filter((t) => Boolean(t.boundFunctionId)).length;
+
+  for (const bounty of PYTHON_BOUNTIES) {
+    if (state.completedBounties.includes(bounty.id)) continue;
+
+    let completed = false;
+    if (bounty.id === 'bounty_move') {
+      completed = state.turrets.some((t) =>
+        Array.isArray(t.blocks) && t.blocks.some((b) => b.type === 'move_to' || b.type === 'patrol')
+      );
+    } else if (bounty.id === 'bounty_var_add') {
+      completed = state.turrets.some((t) =>
+        Array.isArray(t.blocks) && t.blocks.some((b) => b.type === 'set_var' && b.op === 'add')
+      );
+    } else if (bounty.id === 'bounty_if_shield') {
+      completed = state.turrets.some((t) =>
+        ['has_shield', 'is_boss'].includes(t.conditionType) ||
+        ['has_shield', 'is_boss'].includes(t.secondaryCondition)
+      );
+    } else if (bounty.id === 'bounty_loop_weapon') {
+      completed = state.turrets.some((t) =>
+        t.loopMode !== 'none' && t.loopCount >= 2 && t.weapon !== 'laser'
+      );
+    } else if (bounty.id === 'bounty_fn_sync') {
+      completed = boundFnCount >= 2;
+    }
+
+    if (completed) {
+      state.completedBounties.push(bounty.id);
+      state.coins += bounty.rewardCoins || 0;
+      if (bounty.rewardBudget > 0) {
+        state.computeBudget += bounty.rewardBudget;
+      }
+      state.stats.bountiesCleared += 1;
+      state.score += 40;
+      pushEvent(state, {
+        kind: 'bounty_clear',
+        bountyId: bounty.id,
+        title: bounty.title,
+        coins: bounty.rewardCoins,
+        budget: bounty.rewardBudget
+      });
+    }
+  }
+}
+
+function spawnSupplyPickup(state) {
+  const wp = PATH_WAYPOINTS[Math.floor(Math.random() * PATH_WAYPOINTS.length)];
+  const offsetX = Math.round((Math.random() - 0.5) * 140);
+  const offsetY = Math.round((Math.random() - 0.5) * 110);
+  const x = Math.round(clamp(wp.x + offsetX, 75, MAP_WIDTH - 75));
+  const y = Math.round(clamp(wp.y + offsetY, 70, MAP_HEIGHT - 70));
+  const kind = Math.random() < 0.72 ? 'coin' : 'energy';
+  state.pickups.push({
+    id: state.nextEntityId++,
+    kind,
+    x,
+    y,
+    ttl: 14,
+    label: kind === 'coin' ? '+8🪙' : '-2.5s⚡'
+  });
+}
+
+function collectPickup(state, pickupId, collectorName = '隊友') {
+  if (state.status !== 'playing') return { ok: false, error: '目前非戰鬥中' };
+  const idx = state.pickups.findIndex((p) => p.id === Number(pickupId));
+  if (idx === -1) return { ok: false, error: '補給已經被撿走或消失囉' };
+  const [pickup] = state.pickups.splice(idx, 1);
+  state.stats.pickupsCollected += 1;
+
+  if (pickup.kind === 'coin') {
+    state.coins += 8;
+    state.score += 10;
+  } else {
+    state.coins += 4;
+    for (const k of Object.keys(state.skillCooldowns)) {
+      if (state.skillCooldowns[k] > 0) {
+        state.skillCooldowns[k] = Math.max(0, state.skillCooldowns[k] - 2.5);
+      }
+    }
+  }
+
+  pushEvent(state, {
+    kind: 'pickup_collected',
+    x: pickup.x,
+    y: pickup.y,
+    text: `${collectorName} ${pickup.kind === 'coin' ? '+8 🪙!' : '冷卻 -2.5s!'}`,
+    color: pickup.kind === 'coin' ? '#fde047' : '#34d399'
+  });
+  return { ok: true, pickup };
+}
+
+function addMapPing(state, { x, y, sender = '隊友', label = '集火這裡!' } = {}) {
+  const px = Math.round(clamp(Number(x) || MAP_WIDTH / 2, 35, MAP_WIDTH - 35));
+  const py = Math.round(clamp(Number(y) || MAP_HEIGHT / 2, 35, MAP_HEIGHT - 35));
+  const ping = {
+    id: state.nextEntityId++,
+    x: px,
+    y: py,
+    sender: String(sender).slice(0, 14),
+    label: String(label).slice(0, 20),
+    ttl: 3.5
+  };
+  state.pings.push(ping);
+  if (state.pings.length > 4) state.pings.shift();
+  return ping;
+}
+
+function spawnBonusGoldSlime(state) {
+  if (state.status === 'victory' || state.status === 'defeat') {
+    return { ok: false, error: '該局已結束，請先重置或繼續挑戰' };
+  }
+  const gradeCfg = GRADES[state.grade] || GRADES.G7;
+  const tpl = MONSTER_TYPES.gold_slime;
+  const waveScale = 1 + Math.max(0, state.wave - 1) * 0.22;
+  const start = PATH_WAYPOINTS[0];
+  const monster = {
+    id: state.nextEntityId++,
+    ...tpl,
+    name: '🎁 老師空投黃金史萊姆',
+    maxHp: Math.round(tpl.hp * gradeCfg.hpMultiplier * waveScale),
+    hp: Math.round(tpl.hp * gradeCfg.hpMultiplier * waveScale),
+    maxShield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
+    shield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
+    speed: Math.round(tpl.speed * gradeCfg.speedMultiplier * 0.92),
+    coins: 55,
+    x: start.x,
+    y: start.y,
+    distance: 0,
+    progress: 0,
+    slowTimer: 0
+  };
+  state.monsters.push(monster);
+  pushEvent(state, { kind: 'wave_clear', nextWave: state.wave, title: '🎁 老師空投黃金史萊姆！' });
+  return { ok: true, monster };
+}
+
+function computeEndgameRank(state) {
+  const learnedCount = Object.values(state.conceptsLearned).filter(Boolean).length;
+  const bountyCount = state.completedBounties.length;
+  let pts = 0;
+  if (state.status === 'victory' || state.endlessMode) pts += 45;
+  if (state.baseHp >= 80) pts += 20;
+  else if (state.baseHp >= 40) pts += 10;
+  pts += learnedCount * 7 + bountyCount * 4;
+  if (state.bestCombo >= 15) pts += 10;
+  if (state.wave >= 10) pts += 12;
+
+  let rank = 'B';
+  if (pts >= 92) rank = 'SSS';
+  else if (pts >= 78) rank = 'S';
+  else if (pts >= 55) rank = 'A';
+
+  const weaponCounts = { frost: 0, chain: 0, plasma: 0, laser: 0 };
+  let movedCount = 0;
+  for (const t of state.turrets) {
+    weaponCounts[t.weapon] = (weaponCounts[t.weapon] || 0) + 1;
+    if (t.patrolAxis !== 'none' || t.targetX !== t.homeX || t.targetY !== t.homeY) movedCount++;
+  }
+
+  let title = '🛡️ 不倒鐵壁守衛';
+  if (bountyCount >= 4 && learnedCount === 4) title = '🧠 Python 密碼破譯王';
+  else if (weaponCounts.chain >= 2) title = '⚡ 雷霆連鎖魔導師';
+  else if (weaponCounts.frost >= 2) title = '❄️ 絕對零度冰霜王';
+  else if (movedCount >= 2) title = '🚀 鬼神走位戰術家';
+  else if (state.bestCombo >= 20) title = '🔥 暴走連擊狂戰士';
+
+  return { rank, title, bountyCount };
 }
 
 function evaluateSingleCondition(condType, monster, enemiesInRangeCount) {
@@ -673,6 +854,25 @@ function advanceGameTick(state, dt) {
     if (state.comboTimer === 0) state.combo = 0;
   }
 
+  // Update map pings & supply pickups
+  state.pings = state.pings
+    .map((p) => ({ ...p, ttl: p.ttl - dt }))
+    .filter((p) => p.ttl > 0);
+
+  state.pickups = state.pickups
+    .map((p) => ({ ...p, ttl: p.ttl - dt }))
+    .filter((p) => p.ttl > 0);
+
+  if (state.waveDelay <= 0 && (state.monsters.length > 0 || state.spawnQueue.length > 0)) {
+    state.pickupSpawnTimer -= dt;
+    if (state.pickupSpawnTimer <= 0) {
+      if (state.pickups.length < 3) {
+        spawnSupplyPickup(state);
+      }
+      state.pickupSpawnTimer = 7.5;
+    }
+  }
+
   // 1. Wave delay / spawning
   if (state.waveDelay > 0) {
     state.waveDelay = Math.max(0, state.waveDelay - dt);
@@ -1019,6 +1219,7 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
   turret.cost = newCost;
   state.computeUsed = otherCost + newCost;
   state.stats.editsCount += 1;
+  checkBountyProgress(state);
 
   pushEvent(state, {
     kind: 'turret_updated',
@@ -1076,6 +1277,7 @@ function updateTurretFromPython(state, turretId, pythonCode) {
   turret.boundFunctionName = parsed.boundFunctionName || null;
   state.computeUsed = otherCost + newCost;
   state.stats.editsCount += 1;
+  checkBountyProgress(state);
 
   pushEvent(state, {
     kind: 'turret_updated',
@@ -1211,6 +1413,7 @@ function saveFunctionFromBlocks(state, { id, name, blocks } = {}) {
   state.conceptsLearned.functions = true;
   state.stats.functionApps += 1;
   unlockAchievement(state, 'fn_architect', '🧩 函式架構師');
+  checkBountyProgress(state);
   return { ok: true, fn };
 }
 
@@ -1256,6 +1459,7 @@ function updateTurretConfig(state, turretId, rawConfig, options = {}) {
   }
   state.computeUsed = otherCost + newCost;
   state.stats.editsCount += 1;
+  checkBountyProgress(state);
 
   pushEvent(state, {
     kind: 'turret_updated',
@@ -1298,7 +1502,9 @@ function applyFunctionToTurret(state, turretId, functionId) {
     ...(turret.blocks || []).filter((b) => b.type === 'move_to' || b.type === 'patrol'),
     { id: `call_${Date.now().toString(36)}`, type: 'call_fn', fnId: fn.id, argDmg: null, argRate: null }
   ];
-  return updateTurretFromBlocks(state, turretId, blocks);
+  const res = updateTurretFromBlocks(state, turretId, blocks);
+  if (!res.ok) return res;
+  return { ...res, fn };
 }
 
 function skipWaveDelay(state) {
@@ -1334,8 +1540,26 @@ function serializeGameState(state) {
     score: state.score,
     kills: state.kills,
     achievements: state.achievements,
+    completedBounties: state.completedBounties,
+    rankSummary: (state.status === 'victory' || state.status === 'defeat') ? computeEndgameRank(state) : null,
     conceptsLearned: { ...state.conceptsLearned },
     stats: { ...state.stats },
+    pickups: state.pickups.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      x: p.x,
+      y: p.y,
+      label: p.label,
+      ttl: Number(p.ttl.toFixed(1))
+    })),
+    pings: state.pings.map((p) => ({
+      id: p.id,
+      x: p.x,
+      y: p.y,
+      sender: p.sender,
+      label: p.label,
+      ttl: Number(p.ttl.toFixed(1))
+    })),
     turrets: state.turrets.map((t) => ({
       id: t.id,
       name: t.name,
@@ -1423,5 +1647,10 @@ module.exports = {
   saveOrUpdateFunction,
   applyFunctionToTurret,
   skipWaveDelay,
+  collectPickup,
+  addMapPing,
+  spawnBonusGoldSlime,
+  checkBountyProgress,
+  computeEndgameRank,
   serializeGameState
 };

@@ -278,14 +278,20 @@
     const blocks = sanitizeBlocks(rawBlocks);
     const htmlLines = [];
 
-    function wrap(blockId, html, hint = '') {
+    function wrap(blockId, html, hint = '', tooltip = '') {
       const isHi = highlightBlockId && blockId === highlightBlockId;
       const hintHtml = isHi && hint ? ` <span class="py-hi-tag"># 👆 ${escapeHtml(hint)}</span>` : '';
-      return `<div class="py-code-line ${isHi ? 'is-highlighted' : ''}">${html}${hintHtml}</div>`;
+      const tipText = tooltip || hint || '這行由上方 Scratch 積木自動轉譯而成';
+      return `<div class="py-code-line ${isHi ? 'is-highlighted' : ''}" title="${escapeHtml(tipText)}">${html}${hintHtml}</div>`;
     }
 
     if (turretName) {
-      htmlLines.push(wrap(null, `<span class="cmt"># 🐍 ${escapeHtml(turretName)} — Scratch 積木即時轉譯 Python</span>`));
+      htmlLines.push(wrap(
+        null,
+        `<span class="cmt"># 🐍 ${escapeHtml(turretName)} — 這是你剛拼出的 Python 魔法指令！</span>`,
+        '',
+        '以 # 開頭的是「註解」，電腦不會執行，是寫給人看的筆記'
+      ));
     }
 
     let ifCount = 0;
@@ -299,27 +305,37 @@
         htmlLines.push(wrap(
           b.id,
           `turret.<span class="fn-tok">move_to</span>(<span class="num">${b.x}</span>, <span class="num">${b.y}</span>)`,
-          `移動砲塔到座標 (${b.x}, ${b.y})`
+          `叫砲塔飛到座標 (${b.x}, ${b.y})（左右=${b.x}, 上下=${b.y}）`,
+          '括號裡的兩個數字分別代表戰場上的左右 (X) 與上下 (Y) 位置'
         ));
       } else if (b.type === 'patrol') {
+        const dirText = b.axis === 'x' ? '左右來回' : '上下來回';
         htmlLines.push(wrap(
           b.id,
           `turret.<span class="fn-tok">patrol</span>(axis=<span class="str">"${b.axis}"</span>, dist=<span class="num">${b.distance}</span>)`,
-          `來回巡邏 ${b.distance}px`
+          `切換成「${dirText}巡邏」模式，範圍 ${b.distance}px`,
+          '讓砲塔沿著指定方向來回移動巡邏'
         ));
       } else if (b.type === 'set_weapon') {
         htmlLines.push(wrap(
           b.id,
           `turret.<span class="fn-tok">set_weapon</span>(<span class="str">"${b.weapon}"</span>)`,
-          `切換武器模式`
+          `幫砲塔換裝成「${b.weapon}」武器！`,
+          '文字要包在雙引號 "..." 裡面，代表字串 (String)'
         ));
       } else if (b.type === 'set_var') {
         const opSym = b.op === 'add' ? '+=' : '=';
-        const hint = b.op === 'add' ? `讓變數 ${b.varName} 再加上 ${b.value}` : `設定變數 ${b.varName}`;
+        const hint = b.op === 'add'
+          ? `+= 的意思：把原本的 ${b.varName} 再加上 ${b.value}！`
+          : `= 的意思：把 ${b.varName} 這個盒子改成放進 ${b.value}`;
+        const tip = b.op === 'add'
+          ? '+= 在 Python 代表「在原本的值上面再累加」'
+          : '= 在程式裡不是相等，而是「把右邊數值存進左邊變數」';
         htmlLines.push(wrap(
           b.id,
           `${escapeHtml(b.varName)} <span class="kw">${opSym}</span> <span class="num">${b.value}</span>`,
-          hint
+          hint,
+          tip
         ));
       } else if (b.type === 'if_else') {
         const c1 = COND_EXPR[b.cond] || 'monster.shield > 0';
@@ -330,12 +346,15 @@
         ifCount++;
         lastIfId = b.id;
         fallbackCall = FALLBACK_CALL[b.fallback] || 'closest_to_base()';
-        htmlLines.push(wrap(b.id, `<span class="kw">${kw}</span> ${exprHtml}:`, '條件判斷成立時優先鎖定'));
-        htmlLines.push(wrap(b.id, `    target = monster`));
+        const kwTip = kw === 'if'
+          ? 'if 就是 Scratch 的「如果...那麼」，行尾一定要有冒號 :'
+          : 'elif 就是「否則如果」，用來檢查第二個優先條件';
+        htmlLines.push(wrap(b.id, `<span class="kw">${kw}</span> ${exprHtml}:`, '條件成立時就優先瞄準這隻！', kwTip));
+        htmlLines.push(wrap(b.id, `    target = monster`, '', '前面空 4 格代表「條件成立時才要做的動作（縮排）」'));
       } else if (b.type === 'loop') {
         if (ifCount > 0) {
-          htmlLines.push(wrap(lastIfId, `<span class="kw">else</span>:`));
-          htmlLines.push(wrap(lastIfId, `    target = <span class="fn-tok">${fallbackCall}</span>`));
+          htmlLines.push(wrap(lastIfId, `<span class="kw">else</span>:`, '', 'else 就是 Scratch 的「否則」，上面條件都沒中時執行'));
+          htmlLines.push(wrap(lastIfId, `    target = <span class="fn-tok">${fallbackCall}</span>`, '', '沒特殊怪時改抓預設目標'));
           ifCount = 0;
         }
         sawLoop = true;
@@ -343,16 +362,18 @@
           htmlLines.push(wrap(
             b.id,
             `<span class="kw">for</span> i <span class="kw">in</span> <span class="fn-tok">range</span>(<span class="num">${b.count}</span>):`,
-            `重複執行 ${b.count} 次連發迴圈`
+            `for 迴圈＝Scratch「重複 ${b.count} 次」連射！`,
+            `range(${b.count}) 會產生 ${b.count} 次迴圈，對同一個目標連發`
           ));
-          htmlLines.push(wrap(b.id, `    <span class="fn-tok">fire_burst</span>(target, damage)`));
+          htmlLines.push(wrap(b.id, `    <span class="fn-tok">fire_burst</span>(target, damage)`, '', '縮排在 for 底下，表示重複開火的動作'));
         } else {
           htmlLines.push(wrap(
             b.id,
             `<span class="kw">for</span> m <span class="kw">in</span> targets[:<span class="num">${b.count}</span>]:`,
-            `迴圈掃描最多 ${b.count} 隻目標`
+            `for 迴圈掃描前 ${b.count} 隻怪物同時攻擊！`,
+            `targets[:${b.count}] 會抓出名單裡前 ${b.count} 隻怪逐一射擊`
           ));
-          htmlLines.push(wrap(b.id, `    <span class="fn-tok">fire_laser</span>(m, damage)`));
+          htmlLines.push(wrap(b.id, `    <span class="fn-tok">fire_laser</span>(m, damage)`, '', '每一輪把列表中的怪物 m 射一發'));
         }
       } else if (b.type === 'call_fn') {
         const fn = availableFunctions.find((f) => f.id === b.fnId || f.name === b.fnId);
@@ -363,21 +384,22 @@
         htmlLines.push(wrap(
           b.id,
           `<span class="fn-tok">${escapeHtml(fnName)}</span>(${args.join(', ')})`,
-          `呼叫團隊函式積木`
+          `一鍵呼叫自訂「${fnName}」神裝模組（Python def 函式）！`,
+          '函式名稱後面加括號 () 就會直接執行事先存好的整套戰術'
         ));
         sawCallFn = true;
       }
     }
 
     if (ifCount > 0) {
-      htmlLines.push(wrap(lastIfId, `<span class="kw">else</span>:`));
-      htmlLines.push(wrap(lastIfId, `    target = <span class="fn-tok">${fallbackCall}</span>`));
+      htmlLines.push(wrap(lastIfId, `<span class="kw">else</span>:`, '', 'else 代表「否則」，以上條件沒成立時執行'));
+      htmlLines.push(wrap(lastIfId, `    target = <span class="fn-tok">${fallbackCall}</span>`, '', '自動改打預設優先目標'));
     }
     if (!sawLoop && !sawCallFn) {
       if (blocks.every((b) => b.type !== 'if_else')) {
-        htmlLines.push(wrap(null, `target = <span class="fn-tok">${fallbackCall}</span>`));
+        htmlLines.push(wrap(null, `target = <span class="fn-tok">${fallbackCall}</span>`, '', '選出射程內的攻擊目標'));
       }
-      htmlLines.push(wrap(null, `<span class="fn-tok">fire_laser</span>(target, damage)`));
+      htmlLines.push(wrap(null, `<span class="fn-tok">fire_laser</span>(target, damage)`, '', '發射砲彈攻擊 target！'));
     }
 
     return htmlLines.join('');

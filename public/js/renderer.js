@@ -13,6 +13,8 @@ class BattlefieldRenderer {
 
     this.selectedTurretId = options.selectedTurretId || 'T1';
     this.hoveredTurretId = null;
+    this.movePickMode = false;
+    this.movePickHover = null;
 
     this.latestGame = null;
     this.interpMonsters = new Map();
@@ -119,14 +121,15 @@ class BattlefieldRenderer {
     if (ev.kind === 'shot') {
       if (this.sound) this.sound.playShot(ev.isLoop, ev.weapon);
     } else if (ev.kind === 'hit') {
-      this.spawnSparks(ev.x, ev.y, ev.color || '#38bdf8', 5);
+      this.spawnSparks(ev.x, ev.y, ev.color || '#38bdf8', ev.condMatched ? 8 : 5);
+      const isCrit = ev.condMatched && ev.amount >= 25;
       this.floatingTexts.push({
         x: ev.x + (Math.random() * 14 - 7),
         y: ev.y - 12,
-        text: ev.shieldBroken ? `破盾! -${ev.amount}` : `-${ev.amount}`,
+        text: ev.shieldBroken ? `破盾! -${ev.amount}` : (isCrit ? `💥 -${ev.amount}` : `-${ev.amount}`),
         color: ev.shieldBroken ? '#e879f9' : (ev.condMatched ? '#fbbf24' : '#f8fafc'),
-        life: 0.7,
-        maxLife: 0.7
+        life: isCrit ? 0.9 : 0.7,
+        maxLife: isCrit ? 0.9 : 0.7
       });
       if (ev.shieldBroken && this.sound) this.sound.playShieldBreak();
     } else if (ev.kind === 'kill') {
@@ -181,6 +184,27 @@ class BattlefieldRenderer {
         color: '#fde047',
         life: 2.0,
         maxLife: 2.0
+      });
+    } else if (ev.kind === 'bounty_clear') {
+      if (this.sound) this.sound.playSkill('buff');
+      this.floatingTexts.push({
+        x: this.meta.mapWidth / 2,
+        y: 65,
+        text: `🕵️ 密碼破譯成功：${ev.title} (+${ev.coins}🪙)`,
+        color: '#fde047',
+        life: 2.4,
+        maxLife: 2.4
+      });
+    } else if (ev.kind === 'pickup_collected') {
+      if (this.sound) this.sound.playBlockSnap();
+      this.spawnSparks(ev.x, ev.y, ev.color || '#fde047', 10);
+      this.floatingTexts.push({
+        x: ev.x,
+        y: ev.y - 12,
+        text: ev.text || '+8🪙',
+        color: ev.color || '#fde047',
+        life: 1.2,
+        maxLife: 1.2
       });
     } else if (ev.kind === 'base_hit') {
       this.floatingTexts.push({
@@ -258,6 +282,29 @@ class BattlefieldRenderer {
       this.skyBeams[i].life -= dt;
       if (this.skyBeams[i].life <= 0) this.skyBeams.splice(i, 1);
     }
+  }
+
+  canvasPointFromClient(clientX, clientY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = Math.round(((clientX - rect.left) / rect.width) * this.meta.mapWidth);
+    const y = Math.round(((clientY - rect.top) / rect.height) * this.meta.mapHeight);
+    return {
+      x: Math.max(50, Math.min(this.meta.mapWidth - 50, x)),
+      y: Math.max(50, Math.min(this.meta.mapHeight - 50, y))
+    };
+  }
+
+  getPickupAtCanvasPoint(clientX, clientY) {
+    if (!this.latestGame || !Array.isArray(this.latestGame.pickups)) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * this.meta.mapWidth;
+    const y = ((clientY - rect.top) / rect.height) * this.meta.mapHeight;
+    for (const p of this.latestGame.pickups) {
+      if (Math.hypot(p.x - x, p.y - y) <= 26) {
+        return p.id;
+      }
+    }
+    return null;
   }
 
   getTurretAtCanvasPoint(clientX, clientY) {
@@ -462,6 +509,80 @@ class BattlefieldRenderer {
       ctx.restore();
     }
 
+    // 7b. Interactive Supply Pickups & Teammate Radar Pings
+    if (Array.isArray(this.latestGame.pickups)) {
+      for (const pk of this.latestGame.pickups) {
+        const bob = Math.sin(this.animTime * 4 + pk.id) * 3;
+        const isCoin = pk.kind === 'coin';
+        ctx.save();
+        ctx.translate(pk.x, pk.y + bob);
+        ctx.beginPath();
+        ctx.arc(0, 0, 17, 0, Math.PI * 2);
+        ctx.fillStyle = isCoin ? 'rgba(250, 204, 21, 0.2)' : 'rgba(52, 211, 153, 0.2)';
+        ctx.fill();
+        ctx.strokeStyle = isCoin ? '#fde047' : '#34d399';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        if (!this.mini) {
+          ctx.fillStyle = isCoin ? '#fef08a' : '#a7f3d0';
+          ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(pk.label, 0, 4);
+        }
+        ctx.restore();
+      }
+    }
+
+    if (Array.isArray(this.latestGame.pings)) {
+      for (const pg of this.latestGame.pings) {
+        const pulseR = 14 + ((this.animTime * 28) % 24);
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, pg.ttl / 1.2);
+        ctx.strokeStyle = '#fb7185';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(pg.x, pg.y, pulseR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(pg.x, pg.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#fb7185';
+        ctx.fill();
+        if (!this.mini) {
+          ctx.fillStyle = '#fecdd3';
+          ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`🎯 ${pg.sender}: ${pg.label}`, pg.x, pg.y - 22);
+        }
+        ctx.restore();
+      }
+    }
+
+    if (!this.mini && this.movePickMode && this.movePickHover) {
+      const sel = this.latestGame.turrets.find((t) => t.id === this.selectedTurretId);
+      const sp = sel ? (this.interpTurrets.get(sel.id) || sel) : null;
+      ctx.save();
+      if (sp) {
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sp.x, sp.y);
+        ctx.lineTo(this.movePickHover.x, this.movePickHover.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.movePickHover.x, this.movePickHover.y, 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#fde68a';
+      ctx.font = 'bold 12px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(`(${this.movePickHover.x}, ${this.movePickHover.y})`, this.movePickHover.x, this.movePickHover.y - 24);
+      ctx.restore();
+    }
+
     if (!this.mini) {
       ctx.save();
       ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
@@ -600,6 +721,8 @@ class BattlefieldRenderer {
     const isSelected = !this.mini && t.id === this.selectedTurretId;
     const weaponColors = { laser: '#38bdf8', frost: '#67e8f9', chain: '#818cf8', plasma: '#fb923c' };
     const wColor = weaponColors[t.weapon] || '#38bdf8';
+    const isTier3 = Boolean(t.boundFunctionId) || (t.loopMode !== 'none' && t.damage >= 35);
+    const isTier2 = isTier3 || t.loopMode !== 'none' || t.damage >= 30 || t.weapon !== 'laser';
 
     ctx.save();
     ctx.translate(tx, ty);
@@ -612,17 +735,30 @@ class BattlefieldRenderer {
       ctx.fill();
     }
 
+    // Tier 3 rotating rune halo
+    if (isTier3) {
+      ctx.save();
+      ctx.rotate(this.animTime * 1.4);
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 25, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     if (isSelected) {
       ctx.beginPath();
-      ctx.arc(0, 0, 27 + Math.sin(this.animTime * 5) * 2, 0, Math.PI * 2);
+      ctx.arc(0, 0, 28 + Math.sin(this.animTime * 5) * 2, 0, Math.PI * 2);
       ctx.strokeStyle = '#38bdf8';
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
 
-    ctx.fillStyle = '#1e293b';
+    ctx.fillStyle = isTier3 ? '#0f172a' : '#1e293b';
     ctx.strokeStyle = t.boundFunctionId ? '#34d399' : (t.conditionType !== 'none' ? '#fbbf24' : '#475569');
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = isTier2 ? 3 : 2.5;
     ctx.beginPath();
     ctx.arc(0, 0, 21, 0, Math.PI * 2);
     ctx.fill();
@@ -631,10 +767,15 @@ class BattlefieldRenderer {
     ctx.save();
     ctx.rotate(t.angle || 0);
     ctx.fillStyle = wColor;
-    ctx.fillRect(0, -4.5, 24, 9);
-    ctx.fillStyle = '#e2e8f0';
+    if (isTier2) {
+      ctx.fillRect(0, -7, 25, 5);
+      ctx.fillRect(0, 2, 25, 5);
+    } else {
+      ctx.fillRect(0, -4.5, 24, 9);
+    }
+    ctx.fillStyle = isTier3 ? '#fde047' : '#e2e8f0';
     ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.arc(0, 0, isTier2 ? 11 : 10, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
 

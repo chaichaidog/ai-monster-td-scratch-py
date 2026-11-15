@@ -222,6 +222,17 @@
         <!-- Commander Skills -->
         <div id="skill-bar" class="skill-bar"></div>
 
+        <!-- Python Code Bounty Mission Bar -->
+        <div id="bounty-bar" class="bounty-bar">
+          <div id="bounty-text">🕵️ 載入秘密懸賞任務中...</div>
+          <span id="bounty-progress" class="badge badge-amber">0 / 5</span>
+        </div>
+
+        <div id="map-pick-banner" class="alert alert-info hidden" style="margin: 8px 0 0; padding: 8px 12px; font-size: 0.84rem; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <span>🎯 <strong>地圖選點模式啟動中</strong>：請直接在上方戰場地圖點擊你要移動的位置！</span>
+          <button id="btn-cancel-map-pick" class="btn btn-sm" type="button">取消</button>
+        </div>
+
         <div id="wave-hint-box" class="alert alert-info" style="margin: 10px 0 0; padding: 9px 12px; font-size: 0.85rem;">
           💡 波次提示載入中...
         </div>
@@ -350,7 +361,7 @@ damage <span class="kw">+=</span> <span class="num">10</span>  <span class="cmt"
 
         <div>
           <div style="font-size: 0.78rem; color: var(--amber); font-weight: 700; margin-bottom: 4px;">
-            🐍 Python 即時對照學習視窗（拉動積木時，對應的 Python 行會發光提示！）：
+            🐍 Python 魔法對照視窗（沒學過也能看懂！滑鼠指到程式碼可看中文翻譯）：
           </div>
           <div id="code-preview" class="code-preview" style="white-space: pre;"></div>
         </div>

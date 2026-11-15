@@ -453,11 +453,54 @@ const DEFAULT_FUNCTIONS = [
 ];
 
 const QUICK_TIPS = [
-  '💡 拉一塊「移動砲塔」或「巡邏」積木追擊怪物！',
-  '❄️ 試著切換武器為「冰霜緩速彈」或「連鎖閃電」！',
-  '🛡️ 拉「如果 <怪物有護盾>」搭配「重複連發」破盾！',
-  '🪙 金幣夠了可以按上方「軌道轟炸」或「EMP 冰封」救場！',
-  '🧩 把這組積木存成「函式」就能一鍵套用到其他砲塔！'
+  '🏃 快拉藍色積木「移動砲塔」追上去打！',
+  '❄️ 這隻跑太快了！換「冰霜緩速彈」凍住牠！',
+  '⛓️ 一堆小怪來了！切「連鎖閃電」一次電三隻！',
+  '🛡️ 用黃色「如果 <有護盾>」專打紫盾無人機！',
+  '🪙 幫忙撿地圖金幣，夠錢就放「軌道轟炸」清場！'
+];
+
+const PYTHON_BOUNTIES = [
+  {
+    id: 'bounty_move',
+    title: '📍 空間傳送密碼',
+    scratchClue: '用藍色「移動砲塔」或「來回巡邏」積木',
+    pythonHint: '讓底下出現 turret.move_to 或 patrol',
+    rewardCoins: 20,
+    rewardBudget: 0
+  },
+  {
+    id: 'bounty_var_add',
+    title: '➕ 火力疊加密碼 (+=)',
+    scratchClue: '用橘色「將變數增加 (...)」積木',
+    pythonHint: '讓底下出現 += 累加符號',
+    rewardCoins: 25,
+    rewardBudget: 0
+  },
+  {
+    id: 'bounty_if_shield',
+    title: '🔀 專打護盾密碼 (if)',
+    scratchClue: '用黃色「如果 ＜有護盾／BOSS＞」積木',
+    pythonHint: '讓底下出現 if monster.',
+    rewardCoins: 30,
+    rewardBudget: 0
+  },
+  {
+    id: 'bounty_loop_weapon',
+    title: '🩷 迴圈連發＋改裝神武 (for)',
+    scratchClue: '在同一座塔放入「重複迴圈」＋「特效武器」',
+    pythonHint: '讓底下同時出現 for 與 set_weapon',
+    rewardCoins: 35,
+    rewardBudget: 5
+  },
+  {
+    id: 'bounty_fn_sync',
+    title: '🧩 團隊神裝複製模組 (def)',
+    scratchClue: '從「我的函式」套用函式到至少 2 座砲塔',
+    pythonHint: '用同名 def 函式一次控制多座砲塔！',
+    rewardCoins: 45,
+    rewardBudget: 10
+  }
 ];
 
 module.exports = {
@@ -475,5 +518,6 @@ module.exports = {
   FALLBACK_TARGETS,
   LOOP_MODES,
   DEFAULT_FUNCTIONS,
-  QUICK_TIPS
+  QUICK_TIPS,
+  PYTHON_BOUNTIES
 };

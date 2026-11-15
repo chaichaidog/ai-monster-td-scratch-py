@@ -282,7 +282,8 @@ test('Scratch blocks transpiler: move, patrol, weapon, set/add variables, highli
 
   const html = Scratch.blocksToHighlightedPythonHtml(blocks, [], 'T1', 'b_move');
   assert.match(html, /py-code-line is-highlighted/);
-  assert.match(html, /移動砲塔到座標 \(390, 165\)/);
+  assert.match(html, /叫砲塔飛到座標 \(390, 165\)/);
+  assert.match(html, /title="/);
 });
 
 test('Engine Scratch blocks deployment, turret patrol movement, weapons, skills, and Endless Mode', () => {
@@ -369,5 +370,68 @@ test('Engine Scratch blocks deployment, turret patrol movement, weapons, skills,
   assert.equal(gs.status, 'playing');
   assert.equal(gs.wave, 9);
   assert.ok(gs.spawnQueue.length > 0);
+});
+
+test('Super-teacher upgrades: Python bounties, waiting-partner pickups & pings, teacher gold slime drop, and rank', () => {
+  const Engine = require('../game/engine');
+  const { RoomManager } = require('../game/roomManager');
+
+  const rm = new RoomManager();
+  rm.createRoom({ code: 'G7GM', name: '國一刺激互動房', grade: 'G7', maxPlayers: 2 });
+  const p1 = rm.joinRoom({ code: 'G7GM', nickname: '小美', grade: 'G7', socketId: 'sg1' });
+  const p2 = rm.joinRoom({ code: 'G7GM', nickname: '阿豪', grade: 'G7', socketId: 'sg2' });
+  rm.setPlayerReady('G7GM', p1.player.id, true);
+  rm.setPlayerReady('G7GM', p2.player.id, true);
+
+  const room = rm.getRoom('G7GM');
+  const startCoins = room.game.coins;
+
+  // Active player updates T1 using blocks satisfying 4 bounties
+  const upd = rm.handleUpdateTurret('G7GM', p1.player.id, 'T1', {
+    blocks: [
+      { id: 'bm', type: 'move_to', preset: 'custom', x: 350, y: 240 },
+      { id: 'bw', type: 'set_weapon', weapon: 'chain' },
+      { id: 'bv1', type: 'set_var', varName: 'damage', op: 'set', value: 20 },
+      { id: 'bv2', type: 'set_var', varName: 'damage', op: 'add', value: 10 },
+      { id: 'bi', type: 'if_else', cond: 'has_shield', logic: 'none', cond2: 'none', fallback: 'closest_base' },
+      { id: 'bl', type: 'loop', loopMode: 'burst', count: 2 }
+    ]
+  });
+  assert.equal(upd.ok, true);
+  assert.ok(room.game.completedBounties.includes('bounty_move'));
+  assert.ok(room.game.completedBounties.includes('bounty_var_add'));
+  assert.ok(room.game.completedBounties.includes('bounty_if_shield'));
+  assert.ok(room.game.completedBounties.includes('bounty_loop_weapon'));
+  assert.ok(room.game.coins >= startCoins + 20 + 25 + 30 + 35);
+
+  // Bind function to 2 turrets -> unlocks bounty_fn_sync
+  rm.handleApplyFunction('G7GM', p1.player.id, 'T2', 'fn_guard');
+  rm.handleApplyFunction('G7GM', p1.player.id, 'T3', 'fn_guard');
+  assert.ok(room.game.completedBounties.includes('bounty_fn_sync'));
+
+  // Waiting partner (p2) can still collect pickups and send tactical map pings!
+  room.game.pickups.push({ id: 777, kind: 'coin', x: 300, y: 200, ttl: 10, label: '+8🪙' });
+  const coinsBeforePickup = room.game.coins;
+  const pickRes = rm.handleCollectPickup('G7GM', p2.player.id, 777);
+  assert.equal(pickRes.ok, true);
+  assert.equal(room.game.coins, coinsBeforePickup + 8);
+
+  const pingRes = rm.handleMapPing('G7GM', p2.player.id, { x: 420, y: 260, label: '集火這!' });
+  assert.equal(pingRes.ok, true);
+  assert.equal(room.game.pings.length, 1);
+  assert.equal(room.game.pings[0].sender, '阿豪');
+
+  // Teacher GM action: spawn bonus gold slime
+  const prevMonsters = room.game.monsters.length;
+  const gmRes = rm.handleTeacherSpawnGoldSlime('G7GM');
+  assert.equal(gmRes.ok, true);
+  assert.equal(room.game.monsters.length, prevMonsters + 1);
+  assert.equal(room.game.monsters[room.game.monsters.length - 1].type, 'gold_slime');
+
+  // Endgame rank calculation works for victory
+  room.game.status = 'victory';
+  const rankSummary = Engine.computeEndgameRank(room.game);
+  assert.ok(['SSS', 'S', 'A', 'B'].includes(rankSummary.rank));
+  assert.ok(rankSummary.title.length > 0);
 });
 

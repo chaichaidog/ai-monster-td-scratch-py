@@ -31,6 +31,7 @@
   const specGradeBadge = document.getElementById('spec-grade-badge');
   const specCodeBadge = document.getElementById('spec-code-badge');
   const specTitle = document.getElementById('spec-title');
+  const specBtnGold = document.getElementById('spec-btn-gold');
   const specBtnPause = document.getElementById('spec-btn-pause');
   const specBtnReset = document.getElementById('spec-btn-reset');
   const specBtnClose = document.getElementById('spec-btn-close');
@@ -276,6 +277,17 @@
         socket.emit('teacher:toggle_pause', { code: room.code });
       });
 
+      const btnGold = document.createElement('button');
+      btnGold.type = 'button';
+      btnGold.className = 'btn btn-amber btn-sm';
+      btnGold.textContent = '🎁 空投黃金怪';
+      btnGold.addEventListener('click', () => {
+        socket.emit('teacher:spawn_gold_slime', { code: room.code }, (res) => {
+          if (res && res.ok) showToast(`🎁 已對房號 ${room.code} 空投黃金史萊姆！`);
+          else showToast((res && res.error) || '空投失敗');
+        });
+      });
+
       const btnDel = document.createElement('button');
       btnDel.type = 'button';
       btnDel.className = 'btn btn-danger btn-sm';
@@ -286,6 +298,7 @@
 
       btnRow.appendChild(btnWatch);
       btnRow.appendChild(btnForceStart);
+      btnRow.appendChild(btnGold);
       btnRow.appendChild(btnPause);
       btnRow.appendChild(btnDel);
 
@@ -491,6 +504,13 @@
   }
 
   specBtnClose.addEventListener('click', closeSpectator);
+  specBtnGold.addEventListener('click', () => {
+    if (!spectatorCode) return;
+    socket.emit('teacher:spawn_gold_slime', { code: spectatorCode }, (res) => {
+      if (res && res.ok) showToast(`🎁 已對房號 ${spectatorCode} 空投黃金史萊姆！`);
+      else showToast((res && res.error) || '空投失敗');
+    });
+  });
   specBtnPause.addEventListener('click', () => {
     if (spectatorCode) socket.emit('teacher:toggle_pause', { code: spectatorCode });
   });

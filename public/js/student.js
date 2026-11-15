@@ -17,10 +17,12 @@
   let lastGameOverStatus = null;
   let lastSeenWave = null;
   const knownAchievements = new Set();
+  const knownBounties = new Set();
 
   // Scratch Workspace State
   let workspaceBlocks = [];
   let highlightBlockId = null;
+  let mapPickBlockId = null;
   let dragSource = null; // { kind: 'palette', blockType } | { kind: 'workspace', index }
   let lastRenderedBlocksKey = '';
   let lastTurretPillsKey = '';
@@ -77,6 +79,10 @@
 
   const battleCanvas = document.getElementById('battle-canvas');
   const skillBar = document.getElementById('skill-bar');
+  const bountyText = document.getElementById('bounty-text');
+  const bountyProgress = document.getElementById('bounty-progress');
+  const mapPickBanner = document.getElementById('map-pick-banner');
+  const btnCancelMapPick = document.getElementById('btn-cancel-map-pick');
   const waveHintBox = document.getElementById('wave-hint-box');
   const turretSelectorRow = document.getElementById('turret-selector-row');
 
@@ -360,7 +366,11 @@
     lastFnListKey = '';
     lastSeenWave = null;
     lastGameOverStatus = null;
+    mapPickBlockId = null;
     knownAchievements.clear();
+    knownBounties.clear();
+    if (mapPickBanner) mapPickBanner.classList.add('hidden');
+    if (battleCanvas) battleCanvas.classList.remove('pick-cursor');
     gameoverModal.classList.add('hidden');
     if (renderer) {
       renderer.stop();
@@ -383,7 +393,25 @@
     socket.emit('student:skip_wave_delay');
   });
 
+  btnCancelMapPick.addEventListener('click', () => setMapPickMode(null));
+
+  function setMapPickMode(blockId) {
+    mapPickBlockId = blockId || null;
+    if (mapPickBanner) mapPickBanner.classList.toggle('hidden', !mapPickBlockId);
+    if (battleCanvas) battleCanvas.classList.toggle('pick-cursor', Boolean(mapPickBlockId));
+    if (renderer) {
+      renderer.movePickMode = Boolean(mapPickBlockId);
+      if (!mapPickBlockId) renderer.movePickHover = null;
+    }
+    lastRenderedBlocksKey = '';
+    if (roomState) renderWorkspaceBlocks();
+    if (mapPickBlockId) {
+      showToast('🎯 請直接點擊左側戰場地圖任意位置，砲塔座標與底下 Python 會自動填好！');
+    }
+  }
+
   btnEndTurn.addEventListener('click', () => {
+    setMapPickMode(null);
     socket.emit('student:end_turn', {}, (res) => {
       if (res && !res.ok && res.error) showToast(res.error);
       else dirtyDraft = false;
@@ -676,7 +704,7 @@
     const turret = getSelectedTurret();
     const canEdit = isMyTurn() && Boolean(roomState && roomState.game && roomState.game.status === 'playing');
     const fns = (roomState && roomState.game && roomState.game.functions) || [];
-    const key = JSON.stringify({ blocks: workspaceBlocks, canEdit, fnIds: fns.map((f) => `${f.id}:${f.name}`) });
+    const key = JSON.stringify({ blocks: workspaceBlocks, canEdit, mapPickBlockId, fnIds: fns.map((f) => `${f.id}:${f.name}`) });
     if (key === lastRenderedBlocksKey) return;
     lastRenderedBlocksKey = key;
 
@@ -785,12 +813,25 @@
             markDraftEdited(b.id, false);
           }
         });
+        const pickBtn = document.createElement('button');
+        pickBtn.type = 'button';
+        pickBtn.className = 'sb-mini-btn';
+        pickBtn.textContent = mapPickBlockId === b.id ? '🎯 選點中...' : '🎯 點地圖';
+        pickBtn.title = '直接點戰場地圖設定 X, Y 座標';
+        pickBtn.disabled = !canEdit;
+        pickBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setMapPickMode(mapPickBlockId === b.id ? null : b.id);
+          lastRenderedBlocksKey = '';
+          renderWorkspaceBlocks();
+        });
         row.appendChild(lbl);
         row.appendChild(presetSel);
         row.appendChild(document.createTextNode('X'));
         row.appendChild(xInput);
         row.appendChild(document.createTextNode('Y'));
         row.appendChild(yInput);
+        row.appendChild(pickBtn);
         row.appendChild(createBlockActionButtons(idx, b.id, canEdit));
         blockEl.appendChild(row);
       } else if (b.type === 'patrol') {
@@ -1030,6 +1071,7 @@
   // Deploy Scratch Blocks -> Server
   btnDeployTurret.addEventListener('click', () => {
     if (!roomState) return;
+    setMapPickMode(null);
     sound.ensureContext();
     const deployingBlocks = Transpiler.sanitizeBlocks(workspaceBlocks);
     socket.emit(
@@ -1139,25 +1181,64 @@
       renderer.start();
 
       battleCanvas.addEventListener('click', (e) => {
-        const hitId = renderer.getTurretAtCanvasPoint(e.clientX, e.clientY);
-        if (hitId && hitId !== selectedTurretId) {
-          selectedTurretId = hitId;
-          dirtyDraft = false;
-          highlightBlockId = null;
-          lastRenderedBlocksKey = '';
-          lastTurretPillsKey = '';
-          lastFnListKey = '';
-          renderer.setSelectedTurret(hitId);
-          if (roomState) {
-            const t = roomState.game.turrets.find((item) => item.id === hitId);
-            syncEditorFromServer(t);
-            renderTurretPills(roomState.game.turrets);
-            renderEditorHeader(t);
+        if (mapPickBlockId && roomState && roomState.game && isMyTurn()) {
+          const block = workspaceBlocks.find((item) => item.id === mapPickBlockId && item.type === 'move_to');
+          if (block) {
+            const pt = renderer.canvasPointFromClient(e.clientX, e.clientY);
+            block.x = pt.x;
+            block.y = pt.y;
+            block.preset = 'custom';
+            setMapPickMode(null);
+            markDraftEdited(block.id, true);
+            showToast(`📍 已選定座標 (${pt.x}, ${pt.y})！看下方 turret.move_to(${pt.x}, ${pt.y}) 已亮起！`);
+            return;
           }
+          setMapPickMode(null);
+        }
+
+        const pickupId = renderer.getPickupAtCanvasPoint(e.clientX, e.clientY);
+        if (pickupId !== null) {
+          sound.ensureContext();
+          socket.emit('student:collect_pickup', { pickupId }, (res) => {
+            if (res && !res.ok && res.error) showToast(res.error);
+          });
+          return;
+        }
+
+        const hitId = renderer.getTurretAtCanvasPoint(e.clientX, e.clientY);
+        if (hitId) {
+          if (hitId !== selectedTurretId) {
+            selectedTurretId = hitId;
+            dirtyDraft = false;
+            highlightBlockId = null;
+            setMapPickMode(null);
+            lastRenderedBlocksKey = '';
+            lastTurretPillsKey = '';
+            lastFnListKey = '';
+            renderer.setSelectedTurret(hitId);
+            if (roomState) {
+              const t = roomState.game.turrets.find((item) => item.id === hitId);
+              syncEditorFromServer(t);
+              renderTurretPills(roomState.game.turrets);
+              renderEditorHeader(t);
+            }
+          }
+          return;
+        }
+
+        if (roomState && roomState.phase === 'playing' && roomState.game.status === 'playing' && (!isMyTurn() || e.shiftKey)) {
+          const pt = renderer.canvasPointFromClient(e.clientX, e.clientY);
+          socket.emit('student:map_ping', { x: pt.x, y: pt.y, label: isMyTurn() ? '鎖定這!' : '看這裡!' });
+          sound.playBlockSnap();
         }
       });
 
       battleCanvas.addEventListener('mousemove', (e) => {
+        if (mapPickBlockId && renderer.movePickMode) {
+          renderer.movePickHover = renderer.canvasPointFromClient(e.clientX, e.clientY);
+        } else {
+          renderer.movePickHover = null;
+        }
         renderer.hoveredTurretId = renderer.getTurretAtCanvasPoint(e.clientX, e.clientY);
       });
     }
@@ -1201,6 +1282,7 @@
         selectedTurretId = t.id;
         dirtyDraft = false;
         highlightBlockId = null;
+        setMapPickMode(null);
         lastRenderedBlocksKey = '';
         lastTurretPillsKey = '';
         lastFnListKey = '';
@@ -1327,6 +1409,25 @@
       });
     }
 
+    if (meta && Array.isArray(meta.pythonBounties) && Array.isArray(g.completedBounties)) {
+      g.completedBounties.forEach((bId) => {
+        if (!knownBounties.has(bId)) {
+          knownBounties.add(bId);
+          const bInfo = meta.pythonBounties.find((item) => item.id === bId);
+          if (bInfo && g.elapsed > 0.2) {
+            showToast(`🕵️ 密碼懸賞破譯：「${bInfo.title}」完成！獲得 +${bInfo.rewardCoins} 🪙！`, 4600);
+          }
+        }
+      });
+      const nextBounty = meta.pythonBounties.find((item) => !g.completedBounties.includes(item.id));
+      bountyProgress.textContent = `${g.completedBounties.length} / ${meta.pythonBounties.length}`;
+      if (nextBounty) {
+        bountyText.textContent = `🕵️ 懸賞任務「${nextBounty.title}」：${nextBounty.scratchClue}（${nextBounty.pythonHint}）→ 獎金 +${nextBounty.rewardCoins}🪙`;
+      } else {
+        bountyText.textContent = '🎉 全數 5 項 Python 密碼懸賞已破譯完畢，全隊戰力大爆發！';
+      }
+    }
+
     hudRoomBadge.textContent = `房號 ${room.code}`;
     hudGradeBadge.textContent = room.gradeShort;
     hudGradeBadge.className = `badge ${room.grade === 'G7' ? 'badge-g7' : 'badge-g8'}`;
@@ -1378,7 +1479,7 @@
     } else {
       turnBanner.className = 'turn-banner partner-turn';
       turnTitle.textContent = `⏳ 隊友「${room.activeTurnNickname || '夥伴'}」正在調整砲塔積木...`;
-      turnSubtitle.textContent = '你可以看底下 Python 對照學語法、用金幣放上方技能，或點下面建議給隊友：';
+      turnSubtitle.textContent = '你可以點地圖撿 🪙 金幣道具、點空白處發出 🎯 集火標記、或用下方快速提醒給隊友！';
       turnTimerPill.textContent = `換手倒數 ${room.turnTimeLeft} 秒`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.add('hidden');
@@ -1428,21 +1529,23 @@
     if ((g.status === 'victory' || g.status === 'defeat') && lastGameOverStatus !== g.status) {
       lastGameOverStatus = g.status;
       const isWin = g.status === 'victory';
+      const rankInfo = g.rankSummary || { rank: isWin ? 'S' : 'A', title: '🛡️ AI 防線指揮官' };
       gameoverTitle.textContent = isWin ? '🏆 成功守住 AI 主基地！' : '💥 基地護盾被攻破了';
       gameoverTitle.style.color = isWin ? 'var(--emerald)' : 'var(--rose)';
       gameoverDesc.textContent = isWin
-        ? '太強了！你們用 Scratch 積木與 Python 思維成功擊退全數怪物！要繼續挑戰「無盡生存模式」嗎？'
-        : '別灰心！試著移動砲塔追擊、切換冰霜/閃電武器，或搭配金幣技能再挑戰！';
+        ? `【${rankInfo.rank} 級評價 · ${rankInfo.title}】太強了！要繼續挑戰「無盡生存模式」刷新紀錄嗎？`
+        : `【${rankInfo.rank} 級戰績 · ${rankInfo.title}】差一點！點地圖把砲塔拉過去截擊、搭配懸賞金幣技能再戰！`;
 
       btnEndlessMode.classList.toggle('hidden', !isWin);
 
       const learnedCount = Object.values(g.conceptsLearned).filter(Boolean).length;
       const achCount = Array.isArray(g.achievements) ? g.achievements.length : 0;
+      const bountyDone = Array.isArray(g.completedBounties) ? g.completedBounties.length : 0;
       gameoverStats.innerHTML = '';
       const cards = [
-        ['到達波數', g.endlessMode ? `無盡第 ${g.wave} 波` : `第 ${g.wave} / ${g.totalWaves} 波`],
-        ['防守總分', `${g.score} 分（擊殺 ${g.kills} · 最高連擊 ${g.bestCombo}x）`],
-        ['四大程式觀念', `已達成 ${learnedCount} / 4 項`],
+        ['總評等＆稱號', `${rankInfo.rank} 級 · ${rankInfo.title}`],
+        ['防守總分', `${g.score} 分（第 ${g.wave} 波 · 最高連擊 ${g.bestCombo}x）`],
+        ['程式觀念＆懸賞', `4 大觀念 ${learnedCount}/4 · 密碼懸賞 ${bountyDone}/5`],
         ['戰場解鎖成就', `已獲得 ${achCount} 枚徽章（條件 ${g.stats.conditionTriggers} 次 · 迴圈 ${g.stats.loopBursts} 次）`]
       ];
       cards.forEach(([k, v]) => {

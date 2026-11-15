@@ -12,6 +12,9 @@ const {
   saveOrUpdateFunction,
   applyFunctionToTurret,
   skipWaveDelay,
+  collectPickup,
+  addMapPing,
+  spawnBonusGoldSlime,
   serializeGameState
 } = require('./engine');
 
@@ -491,6 +494,39 @@ class RoomManager {
       time: new Date().toLocaleTimeString('zh-TW', { hour12: false })
     };
     this.logAction(room, '👩‍🏫 老師廣播', text);
+    return { ok: true, room };
+  }
+
+  handleCollectPickup(code, playerId, pickupId) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效玩家' };
+    const res = collectPickup(room.game, pickupId, player.nickname);
+    if (!res.ok) return res;
+    return { ok: true, room, pickup: res.pickup };
+  }
+
+  handleMapPing(code, playerId, { x, y, label } = {}) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效玩家' };
+    const ping = addMapPing(room.game, { x, y, sender: player.nickname, label: label || '看這裡!' });
+    return { ok: true, room, ping };
+  }
+
+  handleTeacherSpawnGoldSlime(code) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const res = spawnBonusGoldSlime(room.game);
+    if (!res.ok) return res;
+    room.teacherBanner = {
+      id: Date.now(),
+      text: '🎁 老師驚喜空投！黃金寶藏史萊姆出現啦，快集火賺 55 金幣！',
+      time: new Date().toLocaleTimeString('zh-TW', { hour12: false })
+    };
+    this.logAction(room, '👩‍🏫 老師驚喜', '空投了一隻黃金寶藏史萊姆');
     return { ok: true, room };
   }
 
