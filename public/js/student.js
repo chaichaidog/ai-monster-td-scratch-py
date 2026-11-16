@@ -158,15 +158,19 @@
     return (blocks || []).map((b) => ({ ...b }));
   }
 
-  function calcDraftCost(cfg) {
-    if (!meta) return 0;
+  function calcDraftCost(cfg, hasBlocks = true) {
+    if (!meta || !hasBlocks) return 0;
     const dpsPart = cfg.damage * cfg.fireRate * 0.8;
     const rangePart = Math.max(0, cfg.range - 120) * 0.12;
     const weaponPart = meta.weapons && meta.weapons[cfg.weapon] ? meta.weapons[cfg.weapon].cost : 0;
     let loopPart = 0;
-    if (cfg.loopMode === 'burst' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 6;
-    if (cfg.loopMode === 'multi' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 7;
-    return Math.round(dpsPart + rangePart + loopPart + weaponPart);
+    if (cfg.loopMode === 'burst' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 5;
+    if (cfg.loopMode === 'multi' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 6;
+    const overDmgTax = Math.max(0, cfg.damage - 35) * 1.4;
+    const overRateTax = Math.max(0, cfg.fireRate - 2.0) * 18;
+    const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
+    const fnDiscount = cfg.boundFunctionId ? 0.85 : 1.0;
+    return Math.max(4, Math.round(rawCost * fnDiscount));
   }
 
   function getSelectedTurret() {
@@ -917,7 +921,7 @@
       empty.style.fontSize = '0.82rem';
       empty.style.padding = '16px 8px';
       empty.style.textAlign = 'center';
-      empty.textContent = '從左邊拖曳積木進來（或直接點擊＋），開始寫砲塔程式！';
+      empty.textContent = '💤 這座砲塔還是空的！從左邊點「＋」或拖入積木（別忘記加 🩷「重複迴圈」才會持續連射）！';
       scratchBlocksList.appendChild(empty);
       return;
     }
@@ -1298,7 +1302,8 @@
       x: turret.homeX,
       y: turret.homeY
     });
-    const cost = calcDraftCost(cfg);
+    const hasBlocks = workspaceBlocks.length > 0;
+    const cost = calcDraftCost(cfg, hasBlocks);
     const otherCost = g.turrets
       .filter((t) => t.id !== turret.id)
       .reduce((sum, t) => sum + t.cost, 0);
@@ -1311,15 +1316,22 @@
     if (deployErrorMsg) {
       scratchDiagnostic.className = 'py-diagnostic err';
       scratchDiagnostic.textContent = `❌ 套用失敗：${deployErrorMsg}`;
+    } else if (!hasBlocks) {
+      scratchDiagnostic.className = 'py-diagnostic';
+      scratchDiagnostic.textContent = `💤 ${turret.id} 目前是空的！拖入積木（建議：切換武器＋變數＋🩷重複迴圈）並按「套用」才會開火（總算力 ${totalProjected}/${g.computeBudget}）`;
     } else if (totalProjected > g.computeBudget) {
       scratchDiagnostic.className = 'py-diagnostic err';
-      scratchDiagnostic.textContent = `⚠️ 總算力超出上限（需要 ${totalProjected} / ${g.computeBudget}）！請降低數值或用金幣點上方「算力核心擴容」`;
+      scratchDiagnostic.textContent = `⚠️ 總算力超出上限（需要 ${totalProjected} / ${g.computeBudget}）！請降低數值、改用「🧩 函式」85折省算力，或用金幣升級算力核心`;
+    } else if (cfg.loopMode === 'none') {
+      scratchDiagnostic.className = 'py-diagnostic';
+      scratchDiagnostic.textContent = `⚠️ 未放「🩷 重複迴圈」：套用後只會點放試射 3 發就停火！總算力 ${totalProjected}/${g.computeBudget}`;
     } else {
       scratchDiagnostic.className = 'py-diagnostic ok';
       const moveLabel = cfg.patrolAxis !== 'none'
         ? `巡邏 ${cfg.patrolAxis.toUpperCase()}軸±${cfg.patrolDist}px`
         : `座標 (${cfg.targetX}, ${cfg.targetY})`;
-      scratchDiagnostic.textContent = `✅ [${wInfo}] · 位置 ${moveLabel} · 秒傷 ${dps} · 總算力 ${totalProjected}/${g.computeBudget}`;
+      const fnTag = cfg.boundFunctionId ? '（函式 85 折!）' : '';
+      scratchDiagnostic.textContent = `✅ [${wInfo}]${fnTag} · 位置 ${moveLabel} · 秒傷 ${dps} · 總算力 ${totalProjected}/${g.computeBudget}`;
     }
 
     const nextHtml = Transpiler.blocksToHighlightedPythonHtml(
@@ -1560,7 +1572,7 @@
 
   function renderTurretPills(turrets) {
     const key = `${selectedTurretId}|` + turrets.map((t) =>
-      `${t.id}:${t.cost}:${t.damage}:${t.fireRate}:${t.weapon}:${t.patrolAxis}:${t.targetX},${t.targetY}`
+      `${t.id}:${t.active}:${t.ammoRemaining}:${t.cost}:${t.damage}:${t.fireRate}:${t.weapon}:${t.patrolAxis}:${t.targetX},${t.targetY}`
     ).join('|');
     if (key === lastTurretPillsKey) return;
     lastTurretPillsKey = key;
@@ -1575,7 +1587,7 @@
       top.className = 'turret-pill-title';
       const label = document.createElement('span');
       const wShort = meta && meta.weapons && meta.weapons[t.weapon] ? meta.weapons[t.weapon].short : '雷射';
-      label.textContent = `${t.id} · ${wShort}`;
+      label.textContent = t.active === false ? `${t.id} · 未編寫` : `${t.id} · ${wShort}`;
       const cost = document.createElement('span');
       cost.className = 'badge badge-cyan';
       cost.style.padding = '1px 6px';
@@ -1586,9 +1598,17 @@
 
       const metaDiv = document.createElement('div');
       metaDiv.className = 'turret-pill-meta';
-      const loopLabel = t.loopMode === 'none' ? '單發' : (t.loopMode === 'burst' ? `連發×${t.loopCount}` : `掃描×${t.loopCount}`);
-      const moveBadge = t.patrolAxis !== 'none' ? '巡邏' : (t.targetX !== t.homeX || t.targetY !== t.homeY ? '已移動' : '原地');
-      metaDiv.textContent = `傷${t.damage} · 速${t.fireRate} · ${loopLabel} · ${moveBadge}`;
+      if (t.active === false) {
+        metaDiv.textContent = '💤 空積木（點擊拉積木啟動）';
+      } else if (t.ammoRemaining === 0) {
+        metaDiv.textContent = `🔁 缺迴圈已停 · 傷${t.damage} · 速${t.fireRate}`;
+      } else {
+        const loopLabel = t.loopMode === 'none'
+          ? `點放餘${t.ammoRemaining}發`
+          : (t.loopMode === 'burst' ? `連發×${t.loopCount}` : `掃描×${t.loopCount}`);
+        const moveBadge = t.patrolAxis !== 'none' ? '巡邏' : (t.targetX !== t.homeX || t.targetY !== t.homeY ? '已移動' : '原地');
+        metaDiv.textContent = `傷${t.damage} · 速${t.fireRate} · ${loopLabel} · ${moveBadge}`;
+      }
 
       btn.appendChild(top);
       btn.appendChild(metaDiv);

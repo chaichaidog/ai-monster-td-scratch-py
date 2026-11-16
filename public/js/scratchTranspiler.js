@@ -236,6 +236,11 @@
 
   function blocksToPlainPython(rawBlocks, availableFunctions = [], turretName = '') {
     const blocks = sanitizeBlocks(rawBlocks);
+    if (blocks.length === 0) {
+      return turretName
+        ? `# ${turretName} 尚未放入積木（待機中，不會開火）`
+        : `# 尚未放入積木（待機中，不會開火）`;
+    }
     const lines = [];
     if (turretName) lines.push(`# ${turretName} (Scratch 積木自動轉譯 Python)`);
 
@@ -336,6 +341,24 @@
         '',
         '以 # 開頭的是「註解」，電腦不會執行，是寫給人看的中文說明'
       ));
+    }
+
+    if (blocks.length === 0) {
+      htmlLines.push(wrap(
+        null,
+        `<span class="cmt"># 💤 尚未放置積木（砲塔休眠中，不會自動攻擊）</span>`,
+        '',
+        '',
+        '從左邊積木區拖入積木再按套用，砲塔才會啟動'
+      ));
+      htmlLines.push(wrap(
+        null,
+        `<span class="cmt"># 💡 加「🩷 重複迴圈」才會持續連射；用「🧩 函式」可省 15% 算力！</span>`,
+        '',
+        '',
+        '沒有迴圈積木只會試射 3 發；多個砲塔共用函式 def 更省算力'
+      ));
+      return htmlLines.join('');
     }
 
     let ifCount = 0;
@@ -507,7 +530,13 @@
         const fbLabel = FALLBACK_LABELS[fallbackKey] || '離基地最近';
         htmlLines.push(wrap(null, `target = <span class="fn-tok">${fallbackCall}</span>`, `🎯 瞄準「${fbLabel}」的怪`, '', '選出射程內的攻擊目標'));
       }
-      htmlLines.push(wrap(null, `<span class="fn-tok">fire_laser</span>(target, damage)`, '🔥 用設定好的傷害開火！', '', '發射砲彈攻擊目標！'));
+      htmlLines.push(wrap(
+        null,
+        `<span class="fn-tok">fire_laser</span>(target, damage)`,
+        '⚠️ 沒有 for 迴圈：只會點放試射 3 發就停火！請加「重複迴圈」',
+        '',
+        '沒有放入「重複迴圈 (for)」時，程式跑完 3 次試射就會停止！'
+      ));
     }
 
     return htmlLines.join('');

@@ -291,7 +291,11 @@ function createMiniDom() {
   teacherBtn.dataset.grade = 'TEACHER';
   byClass.set('grade-option', [g7Btn, g8Btn, teacherBtn]);
   byClass.set('code-tab', []);
-  byClass.set('scratch-palette-item', []);
+  const palVar = new MiniElement('div');
+  palVar.dataset.blockType = 'set_var_set';
+  const palLoop = new MiniElement('div');
+  palLoop.dataset.blockType = 'loop_burst';
+  byClass.set('scratch-palette-item', [palVar, palLoop]);
 
   // Pre-create tabs & modals with initial hidden classes matching index.html
   ['view-join', 'tab-scratch'].forEach((id) => doc.getElementById(id));
@@ -304,7 +308,7 @@ function createMiniDom() {
   const inputNick = new MiniElement('input', 'input-nickname');
   byId.set('input-nickname', inputNick);
 
-  return { doc, g7Btn, g8Btn };
+  return { doc, g7Btn, g8Btn, palVar, palLoop };
 }
 
 function waitMs(ms) {
@@ -348,7 +352,7 @@ test('Scratch numeric edits survive 20Hz room:state ticks and persist on apply',
 
     // 2. Connect real Student Socket.IO & mount real public/js/student.js with ScratchTranspiler
     await studentSocket.connect();
-    const { doc, g8Btn } = createMiniDom();
+    const { doc, g8Btn, palVar, palLoop } = createMiniDom();
 
     const transpilerCode = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'scratchTranspiler.js'), 'utf8');
     const studentCode = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'student.js'), 'utf8');
@@ -421,13 +425,21 @@ test('Scratch numeric edits survive 20Hz room:state ticks and persist on apply',
     // 4. Advance to playing phase (20 Hz simulation loop starts emitting room:state ticks)
     doc.getElementById('btn-lobby-next').click();
     for (let i = 0; i < 30; i++) {
-      if (doc.getElementById('scratch-blocks-list').querySelectorAll('input.sb-input').length >= 3) break;
+      if (!doc.getElementById('view-game').classList.contains('hidden')) break;
       await waitMs(25);
     }
+    assert.equal(doc.getElementById('view-game').classList.contains('hidden'), false);
 
     const blocksList = doc.getElementById('scratch-blocks-list');
     const getNumInputs = () => blocksList.querySelectorAll('input.sb-input');
-    assert.ok(getNumInputs().length >= 3, 'Starter turret T1 should have numeric Scratch inputs');
+    // Verify starter T1 begins completely empty so students drag/add blocks themselves
+    assert.equal(getNumInputs().length, 0, 'T1 should start with empty Scratch workspace');
+    assert.ok(doc.getElementById('turret-selector-row').textContent.includes('未編寫'));
+
+    // Student clicks palette to add Variable (damage=25) and Loop (burst x2) blocks
+    palVar.click();
+    palLoop.click();
+    assert.equal(getNumInputs().length, 2, 'Adding set_var and loop_burst creates 2 numeric inputs');
     const dmgInput = getNumInputs()[0];
     assert.equal(dmgInput.value, '25');
 
@@ -575,17 +587,17 @@ test('Socket.IO teacher co-op setup, PIN verification, and teacher + G8 turn pla
     // G8 student edits turret, ends turn -> Teacher takes over
     const stuDeploy = await g8StudentSocket.emitAsync('student:update_turret', {
       turretId: 'T1',
-      config: { damage: 30, fireRate: 1.5 }
+      config: { damage: 25, fireRate: 1.5 }
     });
     assert.equal(stuDeploy.ok, true);
-    assert.equal(stuDeploy.turret.damage, 30);
+    assert.equal(stuDeploy.turret.damage, 25);
 
     const passAck = await g8StudentSocket.emitAsync('student:end_turn', {});
     assert.equal(passAck.ok, true);
 
     const tchDeploy = await teacherPlaySocket.emitAsync('student:update_turret', {
       turretId: 'T2',
-      config: { damage: 25, fireRate: 1.5, weapon: 'frost' }
+      config: { damage: 20, fireRate: 1.0, weapon: 'frost' }
     });
     assert.equal(tchDeploy.ok, true);
     assert.equal(tchDeploy.turret.weapon, 'frost');

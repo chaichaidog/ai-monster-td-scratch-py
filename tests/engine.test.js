@@ -221,7 +221,8 @@ test('Python parser & engine handle formulas, if/elif/else, for loops, def calls
   assert.equal(goodPy.turret.loopCount, 2);
   assert.equal(goodPy.turret.conditionBranches.length, 2);
 
-  // Save a Python def function and call it with custom arguments from T2
+  // Save a Python def function and call it with custom arguments from T2 (after wave budget expansion)
+  state.computeBudget = 120;
   const defRes = saveFunctionFromPython(state, [
     'def swarm_clear(dmg=20, rate=1.5, rng=170):',
     '    damage = dmg',
@@ -417,19 +418,21 @@ test('Super-teacher upgrades: Python bounties, waiting-partner pickups & pings, 
   assert.ok(room.game.completedBounties.includes('bounty_var_add'));
   assert.ok(room.game.completedBounties.includes('bounty_if_shield'));
   assert.ok(room.game.completedBounties.includes('bounty_loop_weapon'));
-  assert.ok(room.game.coins >= startCoins + 20 + 25 + 30 + 35);
+  assert.ok(room.game.coins >= startCoins + 12 + 14 + 16 + 18);
 
-  // Bind function to 2 turrets -> unlocks bounty_fn_sync
-  rm.handleApplyFunction('G7GM', p1.player.id, 'T2', 'fn_guard');
-  rm.handleApplyFunction('G7GM', p1.player.id, 'T3', 'fn_guard');
+  // Bind function to T1 and T2 -> unlocks bounty_fn_sync within tight Wave 1 budget (36*2=72 <= 86)
+  const b1 = rm.handleApplyFunction('G7GM', p1.player.id, 'T1', 'fn_guard');
+  const b2 = rm.handleApplyFunction('G7GM', p1.player.id, 'T2', 'fn_guard');
+  assert.equal(b1.ok, true);
+  assert.equal(b2.ok, true);
   assert.ok(room.game.completedBounties.includes('bounty_fn_sync'));
 
   // Waiting partner (p2) can still collect pickups and send tactical map pings!
-  room.game.pickups.push({ id: 777, kind: 'coin', x: 300, y: 200, ttl: 10, label: '+8🪙' });
+  room.game.pickups.push({ id: 777, kind: 'coin', x: 300, y: 200, ttl: 10, label: '+5🪙' });
   const coinsBeforePickup = room.game.coins;
   const pickRes = rm.handleCollectPickup('G7GM', p2.player.id, 777);
   assert.equal(pickRes.ok, true);
-  assert.equal(room.game.coins, coinsBeforePickup + 8);
+  assert.equal(room.game.coins, coinsBeforePickup + 5);
 
   const pingRes = rm.handleMapPing('G7GM', p2.player.id, { x: 420, y: 260, label: '集火這!' });
   assert.equal(pingRes.ok, true);
@@ -499,6 +502,99 @@ test('teacher + G8 student co-op room setup, grade isolation, and mid-game solo 
   assert.equal(soloRoom.teacherCoop, true);
   assert.equal(midJoin.player.ready, true);
   assert.equal(soloRoom.phase, 'playing');
+});
+
+test('T1-T4 start empty, no-loop turrets stop after 3 trial shots, and fn discount + overclock tax work', () => {
+  const Engine = require('../game/engine');
+  const gs = Engine.createGameState({ grade: 'G7', maxWaves: 8 });
+
+  // 1. All 4 turrets start empty & inactive with 0 compute used and tight coins (10)
+  assert.equal(gs.coins, 10);
+  assert.equal(gs.computeUsed, 0);
+  assert.equal(gs.computeBudget, 86);
+  for (const t of gs.turrets) {
+    assert.equal(t.blocks.length, 0);
+    assert.equal(t.active, false);
+    assert.equal(t.cost, 0);
+  }
+
+  // Empty turrets do NOT shoot during wave
+  gs.waveDelay = 0;
+  for (let i = 0; i < 80; i++) Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.stats.totalShots, 0, 'Empty T1-T4 must stay dormant and not auto-fire');
+
+  // 2. Program T1 WITHOUT a loop block -> fires max 3 trial shots and stops
+  const noLoopRes = Engine.updateTurretFromBlocks(gs, 'T1', [
+    { id: 'v1', type: 'set_var', varName: 'damage', op: 'set', value: 20 }
+  ]);
+  assert.equal(noLoopRes.ok, true);
+  assert.equal(noLoopRes.turret.active, true);
+  assert.equal(noLoopRes.turret.ammoRemaining, 3);
+
+  for (let i = 0; i < 200; i++) Engine.advanceGameTick(gs, 0.05);
+  assert.equal(noLoopRes.turret.ammoRemaining, 0);
+  assert.ok(gs.stats.totalShots <= 3 && gs.stats.totalShots >= 1, 'Without loop block turret fires max 3 shots then halts');
+
+  const shotsBeforeFreeze = gs.stats.totalShots;
+  for (let i = 0; i < 60; i++) Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.stats.totalShots, shotsBeforeFreeze, 'Turret without loop must stay stopped after 3 trial shots');
+
+  // 3. Adding a loop block enables continuous firing beyond 3 shots
+  const loopRes = Engine.updateTurretFromBlocks(gs, 'T1', [
+    { id: 'v1', type: 'set_var', varName: 'damage', op: 'set', value: 20 },
+    { id: 'l1', type: 'loop', loopMode: 'burst', count: 2 }
+  ]);
+  assert.equal(loopRes.ok, true);
+  assert.equal(loopRes.turret.ammoRemaining, -1);
+
+  gs.waveDelay = 0;
+  gs.monsters.push({
+    id: 8888,
+    type: 'tank',
+    name: '標靶巨像',
+    tag: '重甲',
+    x: 170,
+    y: 210,
+    distance: 200,
+    progress: 0.25,
+    hp: 600,
+    maxHp: 600,
+    shield: 0,
+    maxShield: 0,
+    speed: 10,
+    armor: 0,
+    baseDamage: 5,
+    score: 10,
+    coins: 5,
+    radius: 20,
+    color: '#f59e0b',
+    isBoss: false,
+    slowTimer: 0
+  });
+  for (let i = 0; i < 100; i++) Engine.advanceGameTick(gs, 0.05);
+  assert.ok(gs.stats.totalShots >= shotsBeforeFreeze + 4, 'Loop block unlocks continuous firing');
+
+  // 4. Function reuse grants 15% compute discount vs standalone equivalent
+  const soloCost = Engine.calcTurretCost({
+    damage: 25,
+    fireRate: 1.25,
+    range: 185,
+    weapon: 'chain',
+    loopMode: 'burst',
+    loopCount: 2,
+    active: true
+  });
+  const fnCost = Engine.calcTurretCost({
+    damage: 25,
+    fireRate: 1.25,
+    range: 185,
+    weapon: 'chain',
+    loopMode: 'burst',
+    loopCount: 2,
+    active: true,
+    boundFunctionId: 'fn_shield'
+  });
+  assert.ok(fnCost < soloCost, `Expected bound function cost (${fnCost}) < standalone (${soloCost})`);
 });
 
 

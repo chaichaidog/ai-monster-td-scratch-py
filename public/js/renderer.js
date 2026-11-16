@@ -719,13 +719,17 @@ class BattlefieldRenderer {
 
   drawTurret(ctx, t, tx, ty) {
     const isSelected = !this.mini && t.id === this.selectedTurretId;
+    const isDormant = t.active === false;
+    const outOfLoopAmmo = !isDormant && t.ammoRemaining === 0;
     const weaponColors = { laser: '#38bdf8', frost: '#67e8f9', chain: '#818cf8', plasma: '#fb923c' };
-    const wColor = weaponColors[t.weapon] || '#38bdf8';
-    const isTier3 = Boolean(t.boundFunctionId) || (t.loopMode !== 'none' && t.damage >= 35);
-    const isTier2 = isTier3 || t.loopMode !== 'none' || t.damage >= 30 || t.weapon !== 'laser';
+    const wColor = isDormant ? '#64748b' : (weaponColors[t.weapon] || '#38bdf8');
+    const isTier3 = !isDormant && (Boolean(t.boundFunctionId) || (t.loopMode !== 'none' && t.damage >= 35));
+    const isTier2 = !isDormant && (isTier3 || t.loopMode !== 'none' || t.damage >= 30 || t.weapon !== 'laser');
 
     ctx.save();
     ctx.translate(tx, ty);
+    if (isDormant) ctx.globalAlpha = 0.55;
+    else if (outOfLoopAmmo) ctx.globalAlpha = 0.72;
 
     // Hover thruster glow if moved or patrolling
     if (t.patrolAxis !== 'none' || Math.hypot(tx - (t.homeX || tx), ty - (t.homeY || ty)) > 4) {
@@ -785,7 +789,19 @@ class BattlefieldRenderer {
       ctx.textAlign = 'center';
       ctx.fillText(t.id, 0, 35);
 
-      if (t.loopStep > 0) {
+      if (isDormant) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+        ctx.fillText('💤 空積木未啟動', 0, -27);
+      } else if (outOfLoopAmmo) {
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+        ctx.fillText('🔁 缺迴圈已停!', 0, -27);
+      } else if (t.ammoRemaining > 0) {
+        ctx.fillStyle = '#fde68a';
+        ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+        ctx.fillText(`點放餘 ${t.ammoRemaining} 發`, 0, -27);
+      } else if (t.loopStep > 0) {
         ctx.fillStyle = '#f472b6';
         ctx.font = 'bold 11px monospace';
         ctx.fillText(`i=${t.loopStep}/${t.loopCount}`, 0, -28);

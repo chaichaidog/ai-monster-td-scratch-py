@@ -110,54 +110,43 @@ function sanitizeTurretConfig(raw = {}, base = {}) {
 }
 
 function calcTurretCost(cfg) {
+  if (cfg && cfg.active === false) return 0;
   const dpsPart = cfg.damage * cfg.fireRate * 0.8;
   const rangePart = Math.max(0, cfg.range - 120) * 0.12;
   const weaponPart = WEAPONS[cfg.weapon] ? WEAPONS[cfg.weapon].cost : 0;
   let loopPart = 0;
   if (cfg.loopMode === 'burst' && cfg.loopCount > 1) {
-    loopPart = (cfg.loopCount - 1) * 6;
+    loopPart = (cfg.loopCount - 1) * 5;
   } else if (cfg.loopMode === 'multi' && cfg.loopCount > 1) {
-    loopPart = (cfg.loopCount - 1) * 7;
+    loopPart = (cfg.loopCount - 1) * 6;
   }
-  return Math.round(dpsPart + rangePart + loopPart + weaponPart);
+  const overDmgTax = Math.max(0, cfg.damage - 35) * 1.4;
+  const overRateTax = Math.max(0, cfg.fireRate - 2.0) * 18;
+  const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
+  const fnDiscount = cfg && cfg.boundFunctionId ? 0.85 : 1.0;
+  return Math.max(4, Math.round(rawCost * fnDiscount));
 }
 
 function calcTotalComputeUsed(turrets) {
   return turrets.reduce((sum, t) => sum + calcTurretCost(t), 0);
 }
 
-function buildStarterBlocksForSlot(preset, slot) {
-  const blocks = [
-    { id: `${slot.id}_w`, type: 'set_weapon', weapon: preset.weapon || 'laser' },
-    { id: `${slot.id}_d`, type: 'set_var', varName: 'damage', op: 'set', value: preset.damage },
-    { id: `${slot.id}_r`, type: 'set_var', varName: 'fire_rate', op: 'set', value: preset.fireRate },
-    { id: `${slot.id}_g`, type: 'set_var', varName: 'attack_range', op: 'set', value: preset.range }
-  ];
-  if (preset.conditionType && preset.conditionType !== 'none') {
-    blocks.push({
-      id: `${slot.id}_if`,
-      type: 'if_else',
-      cond: preset.conditionType,
-      logic: 'none',
-      cond2: 'none',
-      fallback: preset.fallbackTarget || 'closest_base'
-    });
-  }
-  return blocks;
-}
-
 function createInitialTurrets() {
-  const presets = [
-    { damage: 25, fireRate: 1.5, range: 175, weapon: 'laser', conditionType: 'none', fallbackTarget: 'closest_base', loopMode: 'none', loopCount: 1 },
-    { damage: 20, fireRate: 1.25, range: 175, weapon: 'laser', conditionType: 'none', fallbackTarget: 'closest_base', loopMode: 'none', loopCount: 1 },
-    { damage: 20, fireRate: 1.25, range: 165, weapon: 'laser', conditionType: 'none', fallbackTarget: 'nearest', loopMode: 'none', loopCount: 1 },
-    { damage: 15, fireRate: 1.0, range: 160, weapon: 'laser', conditionType: 'near_base', fallbackTarget: 'closest_base', loopMode: 'none', loopCount: 1 }
-  ];
+  const emptyBaseline = {
+    damage: 20,
+    fireRate: 1.25,
+    range: 170,
+    weapon: 'laser',
+    conditionType: 'none',
+    fallbackTarget: 'closest_base',
+    loopMode: 'none',
+    loopCount: 1
+  };
 
-  return TURRET_SLOTS.map((slot, idx) => {
-    const blocks = buildStarterBlocksForSlot(presets[idx], slot);
+  return TURRET_SLOTS.map((slot) => {
+    const blocks = [];
     const code = ScratchTranspiler.blocksToPlainPython(blocks, [], slot.name);
-    const cfg = sanitizeTurretConfig(presets[idx]);
+    const cfg = sanitizeTurretConfig(emptyBaseline);
     return {
       id: slot.id,
       name: slot.name,
@@ -184,9 +173,11 @@ function createInitialTurrets() {
       lastConditionActive: false,
       boundFunctionId: null,
       boundFunctionName: null,
+      active: false,
+      ammoRemaining: 0,
       blocks,
       code,
-      cost: calcTurretCost(cfg),
+      cost: 0,
       ...cfg
     };
   });
@@ -276,14 +267,14 @@ function createGameState({ grade = 'G7', maxWaves = WAVES.length, difficulty = '
     waveTitle: WAVES[0].title,
     waveHint: WAVES[0].hint,
     waveModifier: null,
-    waveDelay: 3.5,
+    waveDelay: 8.0,
     waveSpawnClock: 0,
     spawnQueue: buildWaveSpawnQueue(0, gradeCfg, difficulty, null),
     baseHp: gradeCfg.baseMaxHp,
     baseMaxHp: gradeCfg.baseMaxHp,
     computeBudget: gradeCfg.startingBudget,
     computeUsed: calcTotalComputeUsed(turrets),
-    coins: gradeCfg.startingCoins || 30,
+    coins: gradeCfg.startingCoins || 10,
     skillCooldowns: { orbital: 0, emp: 0, repair: 0, overclock: 0 },
     empFreezeTimer: 0,
     combo: 0,
@@ -401,10 +392,10 @@ function collectPickup(state, pickupId, collectorName = '隊友') {
   state.stats.pickupsCollected += 1;
 
   if (pickup.kind === 'coin') {
-    state.coins += 8;
+    state.coins += 5;
     state.score += 10;
   } else {
-    state.coins += 4;
+    state.coins += 3;
     for (const k of Object.keys(state.skillCooldowns)) {
       if (state.skillCooldowns[k] > 0) {
         state.skillCooldowns[k] = Math.max(0, state.skillCooldowns[k] - 2.5);
@@ -416,7 +407,7 @@ function collectPickup(state, pickupId, collectorName = '隊友') {
     kind: 'pickup_collected',
     x: pickup.x,
     y: pickup.y,
-    text: `${collectorName} ${pickup.kind === 'coin' ? '+8 🪙!' : '冷卻 -2.5s!'}`,
+    text: `${collectorName} ${pickup.kind === 'coin' ? '+5 🪙!' : '冷卻 -2.5s!'}`,
     color: pickup.kind === 'coin' ? '#fde047' : '#34d399'
   });
   return { ok: true, pickup };
@@ -455,7 +446,7 @@ function spawnBonusGoldSlime(state) {
     maxShield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
     shield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
     speed: Math.round(tpl.speed * gradeCfg.speedMultiplier * 0.92),
-    coins: 55,
+    coins: 35,
     x: start.x,
     y: start.y,
     distance: 0,
@@ -746,7 +737,7 @@ function registerMonsterKill(state, monster) {
   state.comboTimer = 2.6;
   if (state.combo > state.bestCombo) state.bestCombo = state.combo;
 
-  const comboBonusCoins = state.combo > 0 && state.combo % 10 === 0 ? 12 : 0;
+  const comboBonusCoins = state.combo > 0 && state.combo % 10 === 0 ? 6 : 0;
   const coinReward = (monster.coins || 5) + comboBonusCoins;
   state.coins += coinReward;
   state.score += monster.score + (state.combo >= 5 ? Math.min(25, state.combo) : 0);
@@ -931,6 +922,13 @@ function advanceGameTick(state, dt) {
 
   // 3. Move & Patrol Turrets, then target & fire
   for (const turret of state.turrets) {
+    if (!turret.active) {
+      turret.lastTargetId = null;
+      turret.lastConditionActive = false;
+      turret.loopStep = 0;
+      continue;
+    }
+
     // Move anchor smoothly toward targetX/targetY
     const adx = turret.targetX - turret.anchorX;
     const ady = turret.targetY - turret.anchorY;
@@ -1026,12 +1024,21 @@ function advanceGameTick(state, dt) {
         turret.loopStep = 0;
       }
     } else {
+      if (turret.ammoRemaining === 0) {
+        turret.lastTargetId = null;
+        turret.lastConditionActive = false;
+        turret.loopStep = 0;
+        continue;
+      }
       const picks = selectTargetsForTurret(turret, state.monsters, 1);
       if (picks.length > 0) {
         const pick = picks[0];
         const mods = computeShotModifiers(turret, pick.evalRes);
         turret.loopStep = 0;
         spawnProjectile(state, turret, pick.monster, turret.damage, mods, false, false, pick.evalRes.matched);
+        if (turret.ammoRemaining > 0) {
+          turret.ammoRemaining -= 1;
+        }
         turret.cooldown = 1 / (turret.fireRate * mods.cooldownSpeedMult);
       } else {
         turret.lastTargetId = null;
@@ -1092,7 +1099,7 @@ function advanceGameTick(state, dt) {
     state.waveSpawnClock = 0;
     state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier);
     state.computeBudget += gradeCfg.budgetPerWave;
-    state.coins += 15;
+    state.coins += 8;
     state.score += 60;
 
     pushEvent(state, {
@@ -1172,16 +1179,47 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
     y: turret.homeY
   });
 
-  const sanitized = sanitizeTurretConfig(transpiled, turret);
-  const newCost = calcTurretCost(sanitized);
   const otherCost = state.turrets
     .filter((t) => t.id !== turretId)
     .reduce((sum, t) => sum + calcTurretCost(t), 0);
 
+  if (transpiled.blocks.length === 0) {
+    turret.active = false;
+    turret.ammoRemaining = 0;
+    turret.burstRemaining = 0;
+    turret.burstTimer = 0;
+    turret.loopStep = 0;
+    turret.targetX = turret.homeX;
+    turret.targetY = turret.homeY;
+    turret.patrolAxis = 'none';
+    turret.patrolDist = 0;
+    turret.blocks = [];
+    turret.boundFunctionId = null;
+    turret.boundFunctionName = null;
+    turret.loopMode = 'none';
+    turret.loopCount = 1;
+    turret.cost = 0;
+    turret.code = ScratchTranspiler.blocksToPlainPython([], state.functions, turret.name);
+    state.computeUsed = otherCost;
+    pushEvent(state, {
+      kind: 'turret_updated',
+      turretId: turret.id,
+      boundFunctionName: null
+    });
+    return { ok: true, turret };
+  }
+
+  const sanitized = sanitizeTurretConfig(transpiled, turret);
+  const newCost = calcTurretCost({
+    ...sanitized,
+    active: true,
+    boundFunctionId: transpiled.boundFunctionId || null
+  });
+
   if (otherCost + newCost > state.computeBudget) {
     return {
       ok: false,
-      error: `算力預算不足！這組積木需要 ${otherCost + newCost} 算力，目前上限為 ${state.computeBudget}（請調降數值或用金幣升級「⚡ 算力核心擴容」）`
+      error: `算力預算不足！這組積木需要 ${otherCost + newCost} 算力，目前上限為 ${state.computeBudget}（可用「🧩 函式」享 85 折或升級「⚡ 算力核心擴容」）`
     };
   }
 
@@ -1208,6 +1246,10 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
   }
 
   Object.assign(turret, sanitized);
+  turret.active = true;
+  turret.burstRemaining = 0;
+  turret.burstTimer = 0;
+  turret.ammoRemaining = (sanitized.loopMode !== 'none' && sanitized.loopCount >= 2) ? -1 : 3;
   turret.targetX = transpiled.targetX;
   turret.targetY = transpiled.targetY;
   turret.patrolAxis = transpiled.patrolAxis;
@@ -1240,7 +1282,11 @@ function updateTurretFromPython(state, turretId, pythonCode) {
   }
 
   const sanitized = sanitizeTurretConfig(parsed, turret);
-  const newCost = calcTurretCost(sanitized);
+  const newCost = calcTurretCost({
+    ...sanitized,
+    active: true,
+    boundFunctionId: parsed.boundFunctionId || null
+  });
   const otherCost = state.turrets
     .filter((t) => t.id !== turretId)
     .reduce((sum, t) => sum + calcTurretCost(t), 0);
@@ -1271,6 +1317,10 @@ function updateTurretFromPython(state, turretId, pythonCode) {
   }
 
   Object.assign(turret, sanitized);
+  turret.active = true;
+  turret.burstRemaining = 0;
+  turret.burstTimer = 0;
+  turret.ammoRemaining = (sanitized.loopMode !== 'none' && sanitized.loopCount >= 2) ? -1 : 3;
   turret.cost = newCost;
   turret.code = parsed.code;
   turret.boundFunctionId = parsed.boundFunctionId || null;
@@ -1325,7 +1375,7 @@ function saveFunctionFromPython(state, pythonCode, existingId = null) {
         return { ok: false, error: `套用此函式的 ${bt.id} 發生錯誤：${reParsed.error}` };
       }
       const btSan = sanitizeTurretConfig(reParsed, bt);
-      const btCost = calcTurretCost(btSan);
+      const btCost = calcTurretCost({ ...btSan, active: true, boundFunctionId: fn.id });
       totalProjectedCost += btCost;
       pendingUpdates.push({ turret: bt, cfg: btSan, cost: btCost });
     }
@@ -1340,6 +1390,8 @@ function saveFunctionFromPython(state, pythonCode, existingId = null) {
     Object.assign(fn, nextFnDef);
     for (const upd of pendingUpdates) {
       Object.assign(upd.turret, upd.cfg);
+      upd.turret.active = true;
+      upd.turret.ammoRemaining = (upd.cfg.loopMode !== 'none' && upd.cfg.loopCount >= 2) ? -1 : 3;
       upd.turret.cost = upd.cost;
       upd.turret.boundFunctionName = fn.name;
     }
@@ -1427,7 +1479,11 @@ function updateTurretConfig(state, turretId, rawConfig, options = {}) {
   }
 
   const sanitized = sanitizeTurretConfig(rawConfig, turret);
-  const newCost = calcTurretCost(sanitized);
+  const newCost = calcTurretCost({
+    ...sanitized,
+    active: true,
+    boundFunctionId: options.keepFunctionBinding ? turret.boundFunctionId : null
+  });
   const otherCost = state.turrets
     .filter((t) => t.id !== turretId)
     .reduce((sum, t) => sum + calcTurretCost(t), 0);
@@ -1454,6 +1510,10 @@ function updateTurretConfig(state, turretId, rawConfig, options = {}) {
   }
 
   Object.assign(turret, sanitized);
+  turret.active = true;
+  turret.burstRemaining = 0;
+  turret.burstTimer = 0;
+  turret.ammoRemaining = (sanitized.loopMode !== 'none' && sanitized.loopCount >= 2) ? -1 : 3;
   turret.cost = newCost;
   if (!options.keepFunctionBinding) {
     turret.boundFunctionId = null;
@@ -1594,6 +1654,8 @@ function serializeGameState(state) {
       code: t.code,
       boundFunctionId: t.boundFunctionId,
       boundFunctionName: t.boundFunctionName,
+      active: Boolean(t.active),
+      ammoRemaining: Number.isInteger(t.ammoRemaining) ? t.ammoRemaining : (t.active ? -1 : 0),
       lastTargetId: t.lastTargetId,
       lastConditionActive: t.lastConditionActive
     })),

@@ -72,7 +72,7 @@ const SKILLS = {
   orbital: {
     id: 'orbital',
     name: '☄️ 軌道雷射轟炸',
-    coinCost: 35,
+    coinCost: 38,
     cooldown: 12,
     desc: '全場降下衛星光柱，對所有怪物造成 115 穿透傷害'
   },
@@ -93,7 +93,7 @@ const SKILLS = {
   overclock: {
     id: 'overclock',
     name: '⚡ 算力核心擴容',
-    coinCost: 40,
+    coinCost: 42,
     cooldown: 8,
     desc: '永久提升團隊算力預算上限 +25'
   }
@@ -106,9 +106,9 @@ const GRADES = {
     shortLabel: '國一',
     hpMultiplier: 1.0,
     speedMultiplier: 1.0,
-    startingBudget: 150,
-    budgetPerWave: 26,
-    startingCoins: 30,
+    startingBudget: 86,
+    budgetPerWave: 14,
+    startingCoins: 10,
     baseMaxHp: 100
   },
   G8: {
@@ -117,9 +117,9 @@ const GRADES = {
     shortLabel: '國二',
     hpMultiplier: 1.15,
     speedMultiplier: 1.06,
-    startingBudget: 145,
-    budgetPerWave: 26,
-    startingCoins: 30,
+    startingBudget: 80,
+    budgetPerWave: 12,
+    startingCoins: 10,
     baseMaxHp: 100
   }
 };
@@ -134,7 +134,7 @@ const MONSTER_TYPES = {
     armor: 0,
     baseDamage: 8,
     score: 15,
-    coins: 6,
+    coins: 4,
     radius: 14,
     color: '#38bdf8',
     isBoss: false,
@@ -149,7 +149,7 @@ const MONSTER_TYPES = {
     armor: 5,
     baseDamage: 15,
     score: 30,
-    coins: 11,
+    coins: 7,
     radius: 20,
     color: '#f59e0b',
     isBoss: false,
@@ -164,7 +164,7 @@ const MONSTER_TYPES = {
     armor: 0,
     baseDamage: 12,
     score: 28,
-    coins: 10,
+    coins: 6,
     radius: 16,
     color: '#a855f7',
     isBoss: false,
@@ -179,7 +179,7 @@ const MONSTER_TYPES = {
     armor: 0,
     baseDamage: 5,
     score: 10,
-    coins: 4,
+    coins: 2,
     radius: 11,
     color: '#34d399',
     isBoss: false,
@@ -194,7 +194,7 @@ const MONSTER_TYPES = {
     armor: 0,
     baseDamage: 2,
     score: 80,
-    coins: 45,
+    coins: 28,
     radius: 15,
     color: '#fde047',
     isBoss: false,
@@ -209,7 +209,7 @@ const MONSTER_TYPES = {
     armor: 2,
     baseDamage: 14,
     score: 35,
-    coins: 13,
+    coins: 8,
     radius: 14,
     color: '#f472b6',
     isBoss: false,
@@ -224,7 +224,7 @@ const MONSTER_TYPES = {
     armor: 6,
     baseDamage: 35,
     score: 150,
-    coins: 55,
+    coins: 35,
     radius: 27,
     color: '#f43f5e',
     isBoss: true,
@@ -239,7 +239,7 @@ const MONSTER_TYPES = {
     armor: 7,
     baseDamage: 40,
     score: 220,
-    coins: 75,
+    coins: 45,
     radius: 29,
     color: '#8b5cf6',
     isBoss: true,
@@ -254,7 +254,7 @@ const MONSTER_TYPES = {
     armor: 8,
     baseDamage: 50,
     score: 350,
-    coins: 100,
+    coins: 60,
     radius: 31,
     color: '#ef4444',
     isBoss: true,
@@ -265,8 +265,8 @@ const MONSTER_TYPES = {
 const WAVES = [
   {
     wave: 1,
-    title: '第一波：偵察先鋒',
-    hint: '試著從積木區拉入「變數積木」或「移動砲塔」，觀察下方 Python 程式碼變化！',
+    title: '第一波：從零寫砲塔程式',
+    hint: '4 座砲塔目前都是空的！點選 T1，從左邊拉「🩷 重複迴圈」＋「🟧 變數」並按「🚀 套用」才會啟動連射（沒放迴圈只打 3 發喔）！',
     spawns: [
       { type: 'fast', count: 6, interval: 1.45 }
     ]
@@ -360,16 +360,16 @@ const FALLBACK_TARGETS = {
 };
 
 const LOOP_MODES = {
-  none: { id: 'none', label: '單發精準 (無迴圈)', perHitScale: { 1: 1.0 } },
+  none: { id: 'none', label: '無迴圈 (只點放 3 發試射)', perHitScale: { 1: 1.0 } },
   burst: {
     id: 'burst',
     label: '重複 N 次連發',
-    perHitScale: { 1: 1.0, 2: 0.62, 3: 0.48, 4: 0.40 }
+    perHitScale: { 1: 1.0, 2: 0.72, 3: 0.58, 4: 0.48 }
   },
   multi: {
     id: 'multi',
     label: '掃描最多 N 隻同時打',
-    perHitScale: { 1: 1.0, 2: 0.80, 3: 0.68, 4: 0.60 }
+    perHitScale: { 1: 1.0, 2: 0.85, 3: 0.72, 4: 0.64 }
   }
 };
 
@@ -378,29 +378,30 @@ const DEFAULT_FUNCTIONS = [
     id: 'fn_guard',
     name: 'guard_base',
     label: '基地守衛積木',
-    damage: 25,
-    fireRate: 1.5,
+    damage: 22,
+    fireRate: 1.35,
     range: 175,
     weapon: 'frost',
     conditionType: 'near_base',
     secondaryLogic: 'none',
     secondaryCondition: 'none',
     fallbackTarget: 'closest_base',
-    loopMode: 'none',
-    loopCount: 1,
+    loopMode: 'multi',
+    loopCount: 2,
     blocks: [
       { id: 'b1', type: 'set_weapon', weapon: 'frost' },
-      { id: 'b2', type: 'set_var', varName: 'damage', op: 'set', value: 25 },
-      { id: 'b3', type: 'set_var', varName: 'fire_rate', op: 'set', value: 1.5 },
-      { id: 'b4', type: 'if_else', cond: 'near_base', logic: 'none', cond2: 'none', fallback: 'closest_base' }
+      { id: 'b2', type: 'set_var', varName: 'damage', op: 'set', value: 22 },
+      { id: 'b3', type: 'set_var', varName: 'fire_rate', op: 'set', value: 1.35 },
+      { id: 'b4', type: 'if_else', cond: 'near_base', logic: 'none', cond2: 'none', fallback: 'closest_base' },
+      { id: 'b5', type: 'loop', loopMode: 'multi', count: 2 }
     ],
     params: [
-      { name: 'dmg', defaultValue: 25 },
-      { name: 'rate', defaultValue: 1.5 },
+      { name: 'dmg', defaultValue: 22 },
+      { name: 'rate', defaultValue: 1.35 },
       { name: 'rng', defaultValue: 175 }
     ],
     code: [
-      'def guard_base(dmg=25, rate=1.5):',
+      'def guard_base(dmg=22, rate=1.35):',
       '    turret.set_weapon("frost")',
       '    damage = dmg',
       '    fire_rate = rate',
@@ -408,14 +409,15 @@ const DEFAULT_FUNCTIONS = [
       '        target = monster',
       '    else:',
       '        target = closest_to_base()',
-      '    fire_laser(target, damage)'
+      '    for m in targets[:2]:',
+      '        fire_laser(m, damage)'
     ].join('\n')
   },
   {
     id: 'fn_shield',
     name: 'shield_breaker',
     label: '破盾閃電連發積木',
-    damage: 30,
+    damage: 25,
     fireRate: 1.25,
     range: 185,
     weapon: 'chain',
@@ -427,18 +429,18 @@ const DEFAULT_FUNCTIONS = [
     loopCount: 2,
     blocks: [
       { id: 'b1', type: 'set_weapon', weapon: 'chain' },
-      { id: 'b2', type: 'set_var', varName: 'damage', op: 'set', value: 30 },
+      { id: 'b2', type: 'set_var', varName: 'damage', op: 'set', value: 25 },
       { id: 'b3', type: 'set_var', varName: 'fire_rate', op: 'set', value: 1.25 },
       { id: 'b4', type: 'if_else', cond: 'has_shield', logic: 'none', cond2: 'none', fallback: 'highest_hp' },
       { id: 'b5', type: 'loop', loopMode: 'burst', count: 2 }
     ],
     params: [
-      { name: 'dmg', defaultValue: 30 },
+      { name: 'dmg', defaultValue: 25 },
       { name: 'rate', defaultValue: 1.25 },
       { name: 'rng', defaultValue: 185 }
     ],
     code: [
-      'def shield_breaker(dmg=30, rate=1.25):',
+      'def shield_breaker(dmg=25, rate=1.25):',
       '    turret.set_weapon("chain")',
       '    damage = dmg',
       '    fire_rate = rate',
@@ -466,7 +468,7 @@ const PYTHON_BOUNTIES = [
     title: '📍 空間傳送密碼',
     scratchClue: '用藍色「移動砲塔」或「來回巡邏」積木',
     pythonHint: '讓底下出現 turret.move_to 或 patrol',
-    rewardCoins: 20,
+    rewardCoins: 12,
     rewardBudget: 0
   },
   {
@@ -474,7 +476,7 @@ const PYTHON_BOUNTIES = [
     title: '➕ 火力疊加密碼 (+=)',
     scratchClue: '用橘色「將變數增加 (...)」積木',
     pythonHint: '讓底下出現 += 累加符號',
-    rewardCoins: 25,
+    rewardCoins: 14,
     rewardBudget: 0
   },
   {
@@ -482,7 +484,7 @@ const PYTHON_BOUNTIES = [
     title: '🔀 專打護盾密碼 (if)',
     scratchClue: '用黃色「如果 ＜有護盾／BOSS＞」積木',
     pythonHint: '讓底下出現 if monster.',
-    rewardCoins: 30,
+    rewardCoins: 16,
     rewardBudget: 0
   },
   {
@@ -490,16 +492,16 @@ const PYTHON_BOUNTIES = [
     title: '🩷 迴圈連發＋改裝神武 (for)',
     scratchClue: '在同一座塔放入「重複迴圈」＋「特效武器」',
     pythonHint: '讓底下同時出現 for 與 set_weapon',
-    rewardCoins: 35,
-    rewardBudget: 5
+    rewardCoins: 18,
+    rewardBudget: 4
   },
   {
     id: 'bounty_fn_sync',
     title: '🧩 團隊神裝複製模組 (def)',
-    scratchClue: '從「我的函式」套用函式到至少 2 座砲塔',
+    scratchClue: '從「我的函式」套用函式到至少 2 座砲塔（省 15% 算力！）',
     pythonHint: '用同名 def 函式一次控制多座砲塔！',
-    rewardCoins: 45,
-    rewardBudget: 10
+    rewardCoins: 24,
+    rewardBudget: 8
   }
 ];
 
