@@ -151,7 +151,30 @@
   const btnEndlessMode = document.getElementById('btn-endless-mode');
   const btnRestartGame = document.getElementById('btn-restart-game');
   const btnGameoverLeave = document.getElementById('btn-gameover-leave');
+  const turnHandoffToast = document.getElementById('turn-handoff-toast');
   const toastStack = document.getElementById('toast-stack');
+  const DEFAULT_DOC_TITLE = 'AI 怪物塔防戰 — Scratch 積木 × Python 對照學習';
+  let turnHandoffTimer = null;
+  let turnFlashTimer = null;
+
+  function triggerMyTurnReminder(text) {
+    showToast(text, 4500);
+    if (turnBanner) {
+      turnBanner.classList.add('turn-flash');
+      if (turnFlashTimer) clearTimeout(turnFlashTimer);
+      turnFlashTimer = setTimeout(() => {
+        turnBanner.classList.remove('turn-flash');
+      }, 2400);
+    }
+    if (turnHandoffToast) {
+      turnHandoffToast.textContent = text;
+      turnHandoffToast.classList.remove('hidden');
+      if (turnHandoffTimer) clearTimeout(turnHandoffTimer);
+      turnHandoffTimer = setTimeout(() => {
+        turnHandoffToast.classList.add('hidden');
+      }, 3600);
+    }
+  }
 
   function getLocalDraftKey(roomCode, turretId) {
     return `ai_td_draft_${roomCode}_${turretId}`;
@@ -545,6 +568,16 @@
       clearTimeout(draftSyncTimer);
       draftSyncTimer = null;
     }
+    if (turnHandoffTimer) {
+      clearTimeout(turnHandoffTimer);
+      turnHandoffTimer = null;
+    }
+    if (turnFlashTimer) {
+      clearTimeout(turnFlashTimer);
+      turnFlashTimer = null;
+    }
+    if (turnHandoffToast) turnHandoffToast.classList.add('hidden');
+    if (typeof document !== 'undefined') document.title = DEFAULT_DOC_TITLE;
     mapPickBlockId = null;
     knownAchievements.clear();
     knownBounties.clear();
@@ -2000,9 +2033,29 @@
     }
     wasMyTurn = myTurn;
 
+    const mePlayer = room.players.find((p) => p.id === myPlayerId);
+    const partnerPlayer = room.players.find((p) => p.id !== myPlayerId);
+
     if (room.turnMode === 'turn' && room.activeTurnPlayerId !== lastActiveTurnId) {
-      if (lastActiveTurnId !== null) sound.playTurnSwitch();
+      const prevTurnId = lastActiveTurnId;
       lastActiveTurnId = room.activeTurnPlayerId;
+      if (prevTurnId !== null) sound.playTurnSwitch();
+      const multiConnected = room.players.filter((p) => p.connected).length >= 2;
+      if (myTurn && multiConnected && g.status === 'playing') {
+        if (prevTurnId === null) {
+          triggerMyTurnReminder(
+            mePlayer && mePlayer.isTeacher
+              ? '👩‍🏫 戰鬥開始！第 1 回合先由老師示範調整砲塔！'
+              : '🎯 戰鬥開始！第 1 回合先由你設計 Scratch 砲塔！'
+          );
+        } else {
+          triggerMyTurnReminder(
+            mePlayer && mePlayer.isTeacher
+              ? '👩‍🏫 換老師囉！現在輪到老師操作 Scratch 砲塔！'
+              : '🎯 換你囉！現在輪到你編輯 Scratch 積木調整砲塔！'
+          );
+        }
+      }
       if (!myTurn) {
         dirtyDraft = false;
       } else {
@@ -2013,8 +2066,11 @@
       }
     }
 
-    const mePlayer = room.players.find((p) => p.id === myPlayerId);
-    const partnerPlayer = room.players.find((p) => p.id !== myPlayerId);
+    if (typeof document !== 'undefined') {
+      document.title = room.turnMode === 'turn' && myTurn && g.status === 'playing'
+        ? '🎯【換你囉！】AI 怪物塔防戰'
+        : DEFAULT_DOC_TITLE;
+    }
     if (room.turnMode === 'solo') {
       turnBanner.className = 'turn-banner solo-mode';
       turnTitle.textContent = '🧑‍💻 單人 Scratch 戰術台 — 拖拉積木＋對照學 Python';

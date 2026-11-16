@@ -73,28 +73,28 @@ const SKILLS = {
     id: 'orbital',
     name: '☄️ 軌道雷射轟炸',
     coinCost: 38,
-    cooldown: 12,
+    cooldown: 15,
     desc: '全場降下衛星光柱，對所有怪物造成 115 穿透傷害'
   },
   emp: {
     id: 'emp',
     name: '🧊 全場 EMP 冰封',
     coinCost: 25,
-    cooldown: 14,
+    cooldown: 15,
     desc: '凍結場上所有怪物 3.2 秒，爭取調整積木時間'
   },
   repair: {
     id: 'repair',
     name: '🛠️ 修復基地護盾',
     coinCost: 30,
-    cooldown: 10,
+    cooldown: 15,
     desc: '緊急修復基地 +25 HP'
   },
   overclock: {
     id: 'overclock',
     name: '⚡ 算力核心擴容',
     coinCost: 42,
-    cooldown: 8,
+    cooldown: 15,
     desc: '永久提升團隊算力預算上限 +25'
   }
 };

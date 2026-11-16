@@ -689,6 +689,12 @@ test('Timed 20-min endless mode (unlimited waves -> final boss finish), auto-sav
   assert.equal(allFb.length, 1);
   assert.equal(allFb[0].nickname, '小美');
   assert.equal(allFb[0].comment, '希望能多一張雙路線地圖！');
+
+  // 4. All 4 commander skills have 15-second cooldown
+  const { SKILLS } = require('../game/constants');
+  for (const sk of Object.values(SKILLS)) {
+    assert.equal(sk.cooldown, 15, `${sk.id} cooldown should be 15s`);
+  }
 });
 
 

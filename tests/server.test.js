@@ -18,6 +18,9 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     const metaData = await metaRes.json();
     assert.equal(metaData.turretSlots.length, 4);
     assert.equal(metaData.waves.length, 8);
+    Object.values(metaData.skills).forEach((s) => {
+      assert.equal(s.cooldown, 15);
+    });
 
     const homeRes = await fetch(`${baseUrl}/`);
     assert.equal(homeRes.status, 200);
@@ -27,6 +30,7 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.ok(homeHtml.includes('input-teacher-pin'));
     assert.ok(homeHtml.includes('feedback-form-box'));
     assert.ok(homeHtml.includes('btn-submit-feedback'));
+    assert.ok(homeHtml.includes('turn-handoff-toast'));
 
     const teacherPageRes = await fetch(`${baseUrl}/teacher`);
     assert.equal(teacherPageRes.status, 200);
