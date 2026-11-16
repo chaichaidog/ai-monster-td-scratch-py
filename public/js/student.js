@@ -3,10 +3,31 @@
   const sound = new window.SoundEngine();
   const Transpiler = window.ScratchTranspiler;
 
+  function readStoredTeacherToken() {
+    try {
+      return sessionStorage.getItem('ai_td_teacher_token')
+        || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_td_teacher_token') : null)
+        || '';
+    } catch (_err) {
+      return '';
+    }
+  }
+
+  function saveStoredTeacherToken(tok) {
+    if (!tok) return;
+    try {
+      sessionStorage.setItem('ai_td_teacher_token', tok);
+      if (typeof localStorage !== 'undefined') localStorage.setItem('ai_td_teacher_token', tok);
+    } catch (_err) {
+      // Ignore storage failures
+    }
+  }
+
   let meta = null;
   let roomState = null;
   let myPlayerId = null;
   let myPlayerToken = sessionStorage.getItem('ai_td_player_token') || '';
+  let teacherAuthToken = readStoredTeacherToken();
   let selectedGrade = 'G7';
   let selectedTurretId = 'T1';
   let activeTab = 'scratch';
@@ -42,6 +63,9 @@
   const inputRoomCode = document.getElementById('input-room-code');
   const inputNickname = document.getElementById('input-nickname');
   const gradeButtons = document.querySelectorAll('.grade-option');
+  const teacherPinGroup = document.getElementById('teacher-pin-group');
+  const teacherTokenReady = document.getElementById('teacher-token-ready');
+  const inputTeacherPin = document.getElementById('input-teacher-pin');
 
   const lobbyRoomTitle = document.getElementById('lobby-room-title');
   const lobbyCodeBadge = document.getElementById('lobby-code-badge');
@@ -159,13 +183,25 @@
   }
 
   function setGrade(grade) {
-    selectedGrade = grade === 'G8' ? 'G8' : 'G7';
+    selectedGrade = grade === 'TEACHER' ? 'TEACHER' : (grade === 'G8' ? 'G8' : 'G7');
     gradeButtons.forEach((btn) => {
-      btn.classList.remove('active-g7', 'active-g8');
+      btn.classList.remove('active-g7', 'active-g8', 'active-teacher');
       if (btn.dataset.grade === selectedGrade) {
-        btn.classList.add(selectedGrade === 'G7' ? 'active-g7' : 'active-g8');
+        if (selectedGrade === 'TEACHER') btn.classList.add('active-teacher');
+        else btn.classList.add(selectedGrade === 'G7' ? 'active-g7' : 'active-g8');
       }
     });
+    if (teacherPinGroup) {
+      teacherPinGroup.classList.toggle('hidden', selectedGrade !== 'TEACHER');
+    }
+    if (teacherTokenReady) {
+      teacherTokenReady.classList.toggle('hidden', !(selectedGrade === 'TEACHER' && Boolean(teacherAuthToken)));
+    }
+    if (selectedGrade === 'TEACHER') {
+      if (!inputNickname.value.trim()) inputNickname.value = '👩‍🏫 老師';
+    } else if (inputNickname.value.trim() === '👩‍🏫 老師') {
+      inputNickname.value = '';
+    }
   }
 
   gradeButtons.forEach((btn) => {
@@ -299,15 +335,27 @@
     initSkillButtons();
 
     const params = new URLSearchParams(window.location.search);
-    if (params.get('room')) {
-      inputRoomCode.value = params.get('room').toUpperCase();
+    const urlRoom = params.get('room') ? params.get('room').toUpperCase() : '';
+    const isTeacherJoin = params.get('teacherJoin') === '1' || params.get('grade') === 'TEACHER';
+
+    if (urlRoom) {
+      inputRoomCode.value = urlRoom;
     }
-    if (params.get('grade')) {
+    if (isTeacherJoin) {
+      teacherAuthToken = readStoredTeacherToken();
+      setGrade('TEACHER');
+      if (urlRoom && teacherAuthToken) {
+        attemptJoin(urlRoom, inputNickname.value.trim() || '👩‍🏫 老師', 'TEACHER', false);
+        return;
+      }
+    } else if (params.get('grade')) {
       setGrade(params.get('grade'));
+    } else {
+      setGrade('G7');
     }
 
     const savedRaw = sessionStorage.getItem('ai_td_session');
-    if (savedRaw && !params.get('room')) {
+    if (savedRaw && !urlRoom) {
       try {
         const saved = JSON.parse(savedRaw);
         if (saved && saved.roomCode && saved.nickname && saved.grade) {
@@ -330,9 +378,20 @@
 
   function attemptJoin(code, nickname, grade, silent = false) {
     joinError.classList.add('hidden');
+    const isTeacherRole = grade === 'TEACHER';
+    const latestToken = isTeacherRole ? (teacherAuthToken || readStoredTeacherToken()) : '';
+    const pinVal = isTeacherRole && inputTeacherPin ? inputTeacherPin.value.trim() : '';
     socket.emit(
       'student:join_room',
-      { code, nickname, grade, playerToken: myPlayerToken },
+      {
+        code,
+        nickname,
+        grade,
+        playerToken: myPlayerToken,
+        isTeacher: isTeacherRole,
+        teacherToken: latestToken,
+        teacherPin: pinVal
+      },
       (res) => {
         if (!res || !res.ok) {
           if (!silent) {
@@ -345,10 +404,14 @@
         }
         myPlayerId = res.playerId;
         myPlayerToken = res.playerToken;
+        if (res.teacherToken) {
+          teacherAuthToken = res.teacherToken;
+          saveStoredTeacherToken(res.teacherToken);
+        }
         sessionStorage.setItem('ai_td_player_token', myPlayerToken);
         sessionStorage.setItem(
           'ai_td_session',
-          JSON.stringify({ roomCode: res.room.code, nickname, grade })
+          JSON.stringify({ roomCode: res.room.code, nickname: nickname || '👩‍🏫 老師', grade })
         );
         sound.ensureContext();
         onRoomState(res.room);
@@ -1364,9 +1427,12 @@
     lobbyCodeBadge.textContent = `房號：${room.code}`;
     lobbyGradeBadge.textContent = room.gradeLabel;
     lobbyGradeBadge.className = `badge ${room.grade === 'G7' ? 'badge-g7' : 'badge-g8'}`;
-    lobbyModeBadge.textContent = room.maxPlayers === 1 ? '單人獨立挑戰 (1 人)' : '兩人輪流合作 (2 人)';
+    lobbyModeBadge.textContent = room.teacherCoop
+      ? '👩‍🏫 師生雙人同樂 (老師＋學生)'
+      : (room.maxPlayers === 1 ? '單人獨立挑戰 (1 人)' : '兩人輪流合作 (2 人)');
 
     lobbyPlayers.innerHTML = '';
+    const hasTeacherAlready = room.players.some((pl) => pl.isTeacher);
     for (let i = 0; i < room.maxPlayers; i++) {
       const p = room.players[i];
       const slot = document.createElement('div');
@@ -1374,11 +1440,13 @@
         slot.className = `player-slot ${p.ready ? 'is-ready' : ''}`;
         const left = document.createElement('div');
         const nameEl = document.createElement('strong');
-        nameEl.textContent = `${p.nickname}${p.id === myPlayerId ? ' (你)' : ''}`;
+        const rolePrefix = p.isTeacher && !p.nickname.includes('老師') ? '👩‍🏫 ' : '';
+        nameEl.textContent = `${rolePrefix}${p.nickname}${p.id === myPlayerId ? ' (你)' : ''}`;
         const subEl = document.createElement('div');
         subEl.style.fontSize = '0.8rem';
         subEl.style.color = 'var(--text-muted)';
-        subEl.textContent = p.connected ? `第 ${i + 1} 位 · ${room.gradeShort}` : '斷線中...';
+        const roleDesc = p.isTeacher ? '👩‍🏫 老師陪玩隊友' : room.gradeShort;
+        subEl.textContent = p.connected ? `第 ${i + 1} 位 · ${roleDesc}` : '斷線中...';
         left.appendChild(nameEl);
         left.appendChild(subEl);
 
@@ -1390,7 +1458,13 @@
       } else {
         slot.className = 'player-slot is-empty';
         const waitText = document.createElement('span');
-        waitText.textContent = `等待第 ${i + 1} 位${room.gradeShort}同學輸入房號 ${room.code} 加入...`;
+        if (room.teacherCoop) {
+          waitText.textContent = hasTeacherAlready
+            ? `等待${room.gradeShort}同學輸入房號 ${room.code} 加入，和老師一起並肩作戰...`
+            : `👩‍🏫 等待老師加入（或另一位${room.gradeShort}同學）輸入房號 ${room.code} 一起防禦！`;
+        } else {
+          waitText.textContent = `等待第 ${i + 1} 位${room.gradeShort}同學輸入房號 ${room.code} 加入...`;
+        }
         slot.appendChild(waitText);
       }
       lobbyPlayers.appendChild(slot);
@@ -1727,6 +1801,8 @@
       if (!myTurn) dirtyDraft = false;
     }
 
+    const mePlayer = room.players.find((p) => p.id === myPlayerId);
+    const partnerPlayer = room.players.find((p) => p.id !== myPlayerId);
     if (room.turnMode === 'solo') {
       turnBanner.className = 'turn-banner solo-mode';
       turnTitle.textContent = '🧑‍💻 單人 Scratch 戰術台 — 拖拉積木＋對照學 Python';
@@ -1736,16 +1812,31 @@
       teammateTipsBar.classList.add('hidden');
     } else if (myTurn) {
       turnBanner.className = 'turn-banner my-turn';
-      turnTitle.textContent = `🎯 第 ${room.turnNumber} 回合：輪到你拼裝 Scratch 砲塔積木！`;
-      turnSubtitle.textContent = '拼完按下「🚀 套用這組 Scratch 積木到砲塔」，完成調整可按右側換隊友接手。';
+      if (mePlayer && mePlayer.isTeacher) {
+        turnTitle.textContent = `👩‍🏫 第 ${room.turnNumber} 回合：輪到老師示範調整 Scratch 砲塔！`;
+        turnSubtitle.textContent = '老師調整完按下「🚀 套用這組 Scratch 積木到砲塔」，可隨時按右側換學生動手設計！';
+      } else {
+        turnTitle.textContent = `🎯 第 ${room.turnNumber} 回合：輪到你拼裝 Scratch 砲塔積木！`;
+        turnSubtitle.textContent = partnerPlayer && partnerPlayer.isTeacher
+          ? '老師正在旁邊幫你加油＆撿場上金幣！拼完按「🚀 套用」或右側換老師示範。'
+          : '拼完按下「🚀 套用這組 Scratch 積木到砲塔」，完成調整可按右側換隊友接手。';
+      }
       turnTimerPill.textContent = `剩餘 ${room.turnTimeLeft} 秒`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.remove('hidden');
       teammateTipsBar.classList.add('hidden');
     } else {
       turnBanner.className = 'turn-banner partner-turn';
-      turnTitle.textContent = `⏳ 隊友「${room.activeTurnNickname || '夥伴'}」正在調整砲塔積木...`;
-      turnSubtitle.textContent = '你可以點地圖撿 🪙 金幣道具、點空白處發出 🎯 集火標記、或用下方快速提醒給隊友！';
+      if (partnerPlayer && partnerPlayer.isTeacher) {
+        turnTitle.textContent = `👩‍🏫 老師「${room.activeTurnNickname || '老師'}」正在示範調整砲塔積木...`;
+        turnSubtitle.textContent = '邊看老師怎麼拼 Scratch 積木＋對照 Python，邊點地圖撿 🪙 金幣或發送 🎯 集火標記！';
+      } else if (mePlayer && mePlayer.isTeacher) {
+        turnTitle.textContent = `🎓 學生「${room.activeTurnNickname || '學生'}」正在挑戰設計砲塔積木...`;
+        turnSubtitle.textContent = '老師可點左側地圖幫忙撿 🪙 金幣道具、點地圖標記 🎯 引導集火、或發送提示！';
+      } else {
+        turnTitle.textContent = `⏳ 隊友「${room.activeTurnNickname || '夥伴'}」正在調整砲塔積木...`;
+        turnSubtitle.textContent = '你可以點地圖撿 🪙 金幣道具、點空白處發出 🎯 集火標記、或用下方快速提醒給隊友！';
+      }
       turnTimerPill.textContent = `換手倒數 ${room.turnTimeLeft} 秒`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.add('hidden');

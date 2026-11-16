@@ -63,9 +63,12 @@
       <section class="card">
         <h2 style="margin: 0 0 8px; font-size: 1.2rem;">⚡ 快速教學開房</h2>
         <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 0;">
-          針對「兩位國一 + 一位國二、不能跨年級共同玩」的班級配置，一鍵開好兩間獨立房間：
+          針對「兩位國一 + 一位國二、不能跨年級共同玩」的班級配置，可依情況一鍵開好兩間獨立房間（含老師陪國二生雙人同樂模式）：
         </p>
-        <button id="btn-quick-setup" class="btn btn-emerald btn-lg" type="button" style="width: 100%; margin-bottom: 14px;">
+        <button id="btn-quick-setup-coop" class="btn btn-primary btn-lg" type="button" style="width: 100%; margin-bottom: 10px;">
+          👩‍🏫 一鍵開「老師陪國二生玩」：國一雙人房 + 國二師生同樂房
+        </button>
+        <button id="btn-quick-setup" class="btn btn-emerald" type="button" style="width: 100%; margin-bottom: 14px;">
           ⚡ 一鍵建立：國一雙人房 + 國二單人房
         </button>
 
@@ -108,6 +111,7 @@
               <label class="form-label" for="create-max-players">遊玩人數模式</label>
               <select id="create-max-players" class="select">
                 <option value="2">👥 兩人輪流合作 (2人)</option>
+                <option value="teacher_coop">👩‍🏫 師生雙人陪玩（老師＋學生 2人）</option>
                 <option value="1">🧑 單人獨立挑戰 (1人)</option>
               </select>
             </div>
@@ -155,6 +159,7 @@
           <h2 id="spec-title" style="display: inline-block; margin: 0 0 0 8px; font-size: 1.25rem;">即時觀戰</h2>
         </div>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button id="spec-btn-coop-join" class="btn btn-sm btn-primary" type="button">🎮 老師加入陪玩</button>
           <button id="spec-btn-gold" class="btn btn-sm btn-emerald" type="button">🎁 空投黃金史萊姆</button>
           <button id="spec-btn-pause" class="btn btn-sm" type="button">⏸ 暫停/繼續</button>
           <button id="spec-btn-reset" class="btn btn-sm btn-amber" type="button">🔄 重置戰場</button>

@@ -287,7 +287,9 @@ function createMiniDom() {
   g7Btn.dataset.grade = 'G7';
   const g8Btn = new MiniElement('button');
   g8Btn.dataset.grade = 'G8';
-  byClass.set('grade-option', [g7Btn, g8Btn]);
+  const teacherBtn = new MiniElement('button');
+  teacherBtn.dataset.grade = 'TEACHER';
+  byClass.set('grade-option', [g7Btn, g8Btn, teacherBtn]);
   byClass.set('code-tab', []);
   byClass.set('scratch-palette-item', []);
 
@@ -489,6 +491,109 @@ test('Scratch numeric edits survive 20Hz room:state ticks and persist on apply',
     stopSimulationLoop();
     studentSocket.close();
     teacherSocket.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('Socket.IO teacher co-op setup, PIN verification, and teacher + G8 turn play work end-to-end', async () => {
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const wsUrl = `ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`;
+
+  const teacherDashSocket = new MiniSioClient(wsUrl);
+  const g8StudentSocket = new MiniSioClient(wsUrl);
+  const g7SpoofSocket = new MiniSioClient(wsUrl);
+  const teacherPlaySocket = new MiniSioClient(wsUrl);
+
+  try {
+    const loginRes = await fetch(`${baseUrl}/api/teacher/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: process.env.TEACHER_PIN || '1234' })
+    });
+    const loginData = await loginRes.json();
+    assert.equal(loginData.ok, true);
+
+    await teacherDashSocket.connect();
+    await g8StudentSocket.connect();
+    await g7SpoofSocket.connect();
+    await teacherPlaySocket.connect();
+
+    const authAck = await teacherDashSocket.emitAsync('teacher:auth', { token: loginData.token });
+    assert.equal(authAck.ok, true);
+
+    const setupAck = await teacherDashSocket.emitAsync('teacher:create_teacher_coop_setup', {});
+    assert.equal(setupAck.ok, true);
+    assert.equal(setupAck.rooms.length, 2);
+
+    const g8Coop = setupAck.rooms.find((r) => r.grade === 'G8');
+    assert.ok(g8Coop);
+    assert.equal(g8Coop.maxPlayers, 2);
+    assert.equal(g8Coop.teacherCoop, true);
+
+    // Student cannot spoof TEACHER role without valid teacher PIN or token
+    const spoofAck = await g7SpoofSocket.emitAsync('student:join_room', {
+      code: g8Coop.code,
+      nickname: '偷混進來的學生',
+      grade: 'TEACHER',
+      isTeacher: true,
+      teacherPin: 'wrong-pin'
+    });
+    assert.equal(spoofAck.ok, false);
+
+    // G8 student joins room
+    const g8Ack = await g8StudentSocket.emitAsync('student:join_room', {
+      code: g8Coop.code,
+      nickname: '國二孤單生',
+      grade: 'G8'
+    });
+    assert.equal(g8Ack.ok, true);
+
+    // Verified teacher prepares & joins alongside G8 student
+    const prepAck = await teacherDashSocket.emitAsync('teacher:prepare_coop_join', { code: g8Coop.code });
+    assert.equal(prepAck.ok, true);
+
+    const tchJoinAck = await teacherPlaySocket.emitAsync('student:join_room', {
+      code: g8Coop.code,
+      nickname: '👩‍🏫 陳老師',
+      grade: 'TEACHER',
+      isTeacher: true,
+      teacherToken: loginData.token
+    });
+    assert.equal(tchJoinAck.ok, true);
+    assert.equal(tchJoinAck.isTeacher, true);
+    assert.equal(tchJoinAck.room.players.length, 2);
+    assert.equal(tchJoinAck.room.players[1].isTeacher, true);
+
+    // Both ready -> game starts with 2-player turns
+    await g8StudentSocket.emitAsync('student:set_ready', { ready: true });
+    const startAck = await teacherPlaySocket.emitAsync('student:set_ready', { ready: true });
+    assert.equal(startAck.ok, true);
+    assert.equal(startAck.started, true);
+
+    // G8 student edits turret, ends turn -> Teacher takes over
+    const stuDeploy = await g8StudentSocket.emitAsync('student:update_turret', {
+      turretId: 'T1',
+      config: { damage: 30, fireRate: 1.5 }
+    });
+    assert.equal(stuDeploy.ok, true);
+    assert.equal(stuDeploy.turret.damage, 30);
+
+    const passAck = await g8StudentSocket.emitAsync('student:end_turn', {});
+    assert.equal(passAck.ok, true);
+
+    const tchDeploy = await teacherPlaySocket.emitAsync('student:update_turret', {
+      turretId: 'T2',
+      config: { damage: 25, fireRate: 1.5, weapon: 'frost' }
+    });
+    assert.equal(tchDeploy.ok, true);
+    assert.equal(tchDeploy.turret.weapon, 'frost');
+  } finally {
+    g7SpoofSocket.close();
+    g8StudentSocket.close();
+    teacherPlaySocket.close();
+    teacherDashSocket.close();
     await new Promise((resolve) => server.close(resolve));
   }
 });

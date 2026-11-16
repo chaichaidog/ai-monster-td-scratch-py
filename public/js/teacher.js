@@ -1,7 +1,7 @@
 (function () {
   const socket = io();
   let meta = null;
-  let teacherToken = sessionStorage.getItem('ai_td_teacher_token') || '';
+  let teacherToken = sessionStorage.getItem('ai_td_teacher_token') || localStorage.getItem('ai_td_teacher_token') || '';
   let roomsSnapshot = [];
   let spectatorCode = null;
   let specRenderer = null;
@@ -14,6 +14,7 @@
   const loginError = document.getElementById('teacher-login-error');
   const btnLogout = document.getElementById('btn-teacher-logout');
 
+  const btnQuickSetupCoop = document.getElementById('btn-quick-setup-coop');
   const btnQuickSetup = document.getElementById('btn-quick-setup');
   const createRoomForm = document.getElementById('create-room-form');
   const createName = document.getElementById('create-name');
@@ -31,6 +32,7 @@
   const specGradeBadge = document.getElementById('spec-grade-badge');
   const specCodeBadge = document.getElementById('spec-code-badge');
   const specTitle = document.getElementById('spec-title');
+  const specBtnCoopJoin = document.getElementById('spec-btn-coop-join');
   const specBtnGold = document.getElementById('spec-btn-gold');
   const specBtnPause = document.getElementById('spec-btn-pause');
   const specBtnReset = document.getElementById('spec-btn-reset');
@@ -59,9 +61,12 @@
     if (teacherToken) {
       socket.emit('teacher:auth', { token: teacherToken }, (authRes) => {
         if (authRes && authRes.ok) {
+          sessionStorage.setItem('ai_td_teacher_token', teacherToken);
+          localStorage.setItem('ai_td_teacher_token', teacherToken);
           showDashboard();
         } else {
           sessionStorage.removeItem('ai_td_teacher_token');
+          localStorage.removeItem('ai_td_teacher_token');
           teacherToken = '';
         }
       });
@@ -97,6 +102,7 @@
       }
       teacherToken = data.token;
       sessionStorage.setItem('ai_td_teacher_token', teacherToken);
+      localStorage.setItem('ai_td_teacher_token', teacherToken);
       socket.emit('teacher:auth', { token: teacherToken }, (ack) => {
         if (ack && ack.ok) {
           showDashboard();
@@ -113,9 +119,45 @@
 
   btnLogout.addEventListener('click', () => {
     sessionStorage.removeItem('ai_td_teacher_token');
+    localStorage.removeItem('ai_td_teacher_token');
     teacherToken = '';
     showLogin();
   });
+
+  function launchTeacherCoopJoin(code) {
+    if (!code) return;
+    if (teacherToken) {
+      localStorage.setItem('ai_td_teacher_token', teacherToken);
+    }
+    socket.emit('teacher:prepare_coop_join', { code }, (res) => {
+      if (!res || !res.ok) {
+        showToast((res && res.error) || '開啟師生同樂失敗');
+        return;
+      }
+      const joinUrl = `${window.location.origin}/?room=${encodeURIComponent(code)}&teacherJoin=1`;
+      const opened = window.open(joinUrl, '_blank');
+      if (opened) {
+        showToast(`🎮 已備妥房號 ${code}「師生同樂雙人模式」，請在新分頁陪學生一起防守！`);
+      } else {
+        copyText(joinUrl, `瀏覽器攔截彈出視窗，已複製房號 ${code} 老師陪玩連結，請貼到新分頁開啟！`);
+      }
+    });
+  }
+
+  if (btnQuickSetupCoop) {
+    btnQuickSetupCoop.addEventListener('click', () => {
+      socket.emit('teacher:create_teacher_coop_setup', {}, (res) => {
+        if (res && res.ok) {
+          const g8 = res.rooms.find((r) => r.grade === 'G8');
+          const codes = res.rooms.map((r) => `${r.gradeShort}:${r.code}`).join(' / ');
+          showToast(`👩‍🏫 已建好雙房（${codes}）！點國二房的「🎮 老師加入陪玩」即可陪國二生一起玩！`);
+          if (g8) createCode.placeholder = `國二師生同樂房號: ${g8.code}`;
+        } else {
+          showToast((res && res.error) || '建立失敗');
+        }
+      });
+    });
+  }
 
   btnQuickSetup.addEventListener('click', () => {
     socket.emit('teacher:create_default_setup', {}, (res) => {
@@ -129,6 +171,7 @@
   });
 
   createGrade.addEventListener('change', () => {
+    if (createMaxPlayers.value === 'teacher_coop') return;
     // Helpful default suggestion: G7 -> 2 players, G8 -> 1 player
     if (createGrade.value === 'G7') {
       createMaxPlayers.value = '2';
@@ -141,13 +184,15 @@
 
   createRoomForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    const isTeacherCoop = createMaxPlayers.value === 'teacher_coop';
     socket.emit(
       'teacher:create_room',
       {
         name: createName.value.trim(),
         code: createCode.value.trim(),
         grade: createGrade.value,
-        maxPlayers: Number(createMaxPlayers.value),
+        maxPlayers: isTeacherCoop ? 2 : Number(createMaxPlayers.value),
+        teacherCoop: isTeacherCoop,
         difficulty: createDifficulty.value
       },
       (res) => {
@@ -259,6 +304,13 @@
       btnWatch.textContent = '👁️ 放大觀戰與指導';
       btnWatch.addEventListener('click', () => openSpectator(room.code));
 
+      const btnCoopJoin = document.createElement('button');
+      btnCoopJoin.type = 'button';
+      btnCoopJoin.className = 'btn btn-sm btn-emerald';
+      btnCoopJoin.textContent = '🎮 老師加入陪玩';
+      btnCoopJoin.title = '升級為師生雙人同樂房，並開啟陪玩視窗與該房學生一起打';
+      btnCoopJoin.addEventListener('click', () => launchTeacherCoopJoin(room.code));
+
       const btnForceStart = document.createElement('button');
       btnForceStart.type = 'button';
       btnForceStart.className = 'btn btn-emerald btn-sm';
@@ -297,6 +349,7 @@
       });
 
       btnRow.appendChild(btnWatch);
+      btnRow.appendChild(btnCoopJoin);
       btnRow.appendChild(btnForceStart);
       btnRow.appendChild(btnGold);
       btnRow.appendChild(btnPause);
@@ -318,6 +371,7 @@
         metaRow,
         playersRow,
         conceptsRow,
+        btnCoopJoin,
         btnForceStart,
         btnPause,
         renderer
@@ -332,8 +386,11 @@
     entry.nameSpan.textContent = room.name;
 
     entry.metaRow.innerHTML = '';
+    const modeLabel = room.teacherCoop
+      ? '👩‍🏫 師生同樂'
+      : (room.maxPlayers === 1 ? '🧑 單人模式' : '👥 兩人輪流');
     const badges = [
-      [room.maxPlayers === 1 ? '🧑 單人模式' : '👥 兩人輪流', 'badge'],
+      [modeLabel, room.teacherCoop ? 'badge badge-g8' : 'badge'],
       [statusLabel(room), 'badge badge-cyan'],
       [`🛡️ HP ${room.game.baseHp}`, 'badge'],
       [`🏆 ${room.game.score} 分`, 'badge badge-amber']
@@ -345,16 +402,25 @@
       entry.metaRow.appendChild(sp);
     });
 
+    const hasTeacherPlayer = room.players.some((p) => p.isTeacher);
+    const studentsOnlyFull = room.maxPlayers >= 2 && room.players.length >= room.maxPlayers && !hasTeacherPlayer;
+    entry.btnCoopJoin.disabled = studentsOnlyFull;
+    entry.btnCoopJoin.textContent = hasTeacherPlayer ? '🎮 進入陪玩視窗' : '🎮 老師加入陪玩';
+
     if (room.players.length === 0) {
-      entry.playersRow.textContent = '學生名單：尚未有學生進入';
+      entry.playersRow.textContent = room.teacherCoop
+        ? '成員名單：尚未有學生／老師進入'
+        : '學生名單：尚未有學生進入';
     } else {
       const pList = room.players.map((p) => {
+        const teacherTag = p.isTeacher ? '👩‍🏫 ' : '';
         const turnMark = room.phase === 'playing' && room.turnMode === 'turn' && room.activeTurnPlayerId === p.id ? ' 🎯操作中' : '';
         const connMark = p.connected ? '' : ' (離線)';
         const readyMark = room.phase === 'lobby' ? (p.ready ? ' [✓已按準備]' : ' [等候中]') : '';
-        return `${p.nickname}${turnMark}${readyMark}${connMark}`;
+        return `${teacherTag}${p.nickname}${turnMark}${readyMark}${connMark}`;
       }).join(' ｜ ');
-      entry.playersRow.textContent = `學生 (${room.players.length}/${room.maxPlayers})：${pList}`;
+      const prefix = hasTeacherPlayer || room.teacherCoop ? '同樂成員' : '學生';
+      entry.playersRow.textContent = `${prefix} (${room.players.length}/${room.maxPlayers})：${pList}`;
     }
 
     entry.conceptsRow.innerHTML = '';
@@ -504,6 +570,11 @@
   }
 
   specBtnClose.addEventListener('click', closeSpectator);
+  if (specBtnCoopJoin) {
+    specBtnCoopJoin.addEventListener('click', () => {
+      if (spectatorCode) launchTeacherCoopJoin(spectatorCode);
+    });
+  }
   specBtnGold.addEventListener('click', () => {
     if (!spectatorCode) return;
     socket.emit('teacher:spawn_gold_slime', { code: spectatorCode }, (res) => {

@@ -331,6 +331,16 @@ button, input, select {
   box-shadow: 0 0 18px rgba(139, 92, 246, 0.22);
 }
 
+.grade-option.teacher-option {
+  grid-column: 1 / -1;
+}
+
+.grade-option.active-teacher {
+  border-color: var(--amber);
+  background: rgba(245, 158, 11, 0.14);
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.22);
+}
+
 .grade-option strong {
   display: block;
   font-size: 1.05rem;

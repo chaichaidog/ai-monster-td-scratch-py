@@ -450,3 +450,55 @@ test('Super-teacher upgrades: Python bounties, waiting-partner pickups & pings, 
   assert.ok(rankSummary.title.length > 0);
 });
 
+test('teacher + G8 student co-op room setup, grade isolation, and mid-game solo upgrade work cleanly', () => {
+  const rm = new RoomManager();
+  const coopSetup = rm.createTeacherCoopClassSetup();
+  assert.equal(coopSetup.ok, true);
+  assert.equal(coopSetup.rooms.length, 2);
+
+  const g7Room = coopSetup.rooms.find((r) => r.grade === 'G7');
+  const g8Coop = coopSetup.rooms.find((r) => r.grade === 'G8');
+  assert.equal(g7Room.maxPlayers, 2);
+  assert.equal(g8Coop.maxPlayers, 2);
+  assert.equal(g8Coop.teacherCoop, true);
+  assert.equal(g8Coop.turnMode, 'turn');
+
+  // Strict G7 isolation remains enforced on G8 teacher-coop room for students
+  const badG7 = rm.joinRoom({ code: g8Coop.code, nickname: '國一誤闖', grade: 'G7', socketId: 'bad' });
+  assert.equal(badG7.ok, false);
+  assert.equal(badG7.code, 'GRADE_MISMATCH');
+
+  // G8 student and teacher join the G8 teacher-coop room together
+  const stuJoin = rm.joinRoom({ code: g8Coop.code, nickname: '國二小宇', grade: 'G8', socketId: 's_g8' });
+  const tchJoin = rm.joinRoom({ code: g8Coop.code, nickname: '👩‍🏫 陳老師', grade: 'TEACHER', socketId: 's_t', isTeacher: true });
+  assert.equal(stuJoin.ok, true);
+  assert.equal(tchJoin.ok, true);
+  assert.equal(tchJoin.player.isTeacher, true);
+  assert.equal(g8Coop.players.length, 2);
+
+  rm.setPlayerReady(g8Coop.code, stuJoin.player.id, true);
+  const startRes = rm.setPlayerReady(g8Coop.code, tchJoin.player.id, true);
+  assert.equal(startRes.started, true);
+  assert.equal(g8Coop.activeTurnPlayerId, stuJoin.player.id);
+
+  const endRes = rm.endTurn(g8Coop.code, stuJoin.player.id);
+  assert.equal(endRes.ok, true);
+  assert.equal(g8Coop.activeTurnPlayerId, tchJoin.player.id);
+
+  // Solo G8 room already in playing phase auto-upgrades to 2-player co-op when teacher joins
+  const { room: soloRoom } = rm.createRoom({ code: 'G8SOLO', grade: 'G8', maxPlayers: 1 });
+  const soloStu = rm.joinRoom({ code: 'G8SOLO', nickname: '孤單國二生', grade: 'G8', socketId: 's_solo' });
+  rm.setPlayerReady('G8SOLO', soloStu.player.id, true);
+  assert.equal(soloRoom.phase, 'playing');
+  assert.equal(soloRoom.turnMode, 'solo');
+
+  const midJoin = rm.joinRoom({ code: 'G8SOLO', nickname: '👩‍🏫 老師', grade: 'TEACHER', socketId: 's_tch2', isTeacher: true });
+  assert.equal(midJoin.ok, true);
+  assert.equal(soloRoom.maxPlayers, 2);
+  assert.equal(soloRoom.turnMode, 'turn');
+  assert.equal(soloRoom.teacherCoop, true);
+  assert.equal(midJoin.player.ready, true);
+  assert.equal(soloRoom.phase, 'playing');
+});
+
+

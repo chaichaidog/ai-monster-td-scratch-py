@@ -139,6 +139,36 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('teacher:create_teacher_coop_setup', (_payload, ack) => {
+    if (socket.data.role !== 'teacher') {
+      if (typeof ack === 'function') ack({ ok: false, error: '未授權的教師操作' });
+      return;
+    }
+    const res = roomManager.createTeacherCoopClassSetup();
+    broadcastTeacherDashboard();
+    if (typeof ack === 'function') {
+      ack({
+        ok: res.ok,
+        rooms: res.rooms.map((r) => roomManager.serializeRoom(r, false))
+      });
+    }
+  });
+
+  socket.on('teacher:prepare_coop_join', ({ code } = {}, ack) => {
+    if (socket.data.role !== 'teacher') {
+      if (typeof ack === 'function') ack({ ok: false, error: '未授權的教師操作' });
+      return;
+    }
+    const res = roomManager.enableTeacherCoop(code);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') {
+      ack(res.ok ? { ok: true, room: roomManager.serializeRoom(res.room, false) } : res);
+    }
+  });
+
   socket.on('teacher:delete_room', ({ code } = {}, ack) => {
     if (socket.data.role !== 'teacher') {
       if (typeof ack === 'function') ack({ ok: false, error: '未授權的教師操作' });
@@ -203,8 +233,25 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
   });
 
-  // --- Student Socket Events ---
+  // --- Student & Teacher-Coop Join Events ---
   socket.on('student:join_room', (payload = {}, ack) => {
+    const wantsTeacher = payload.grade === 'TEACHER' || Boolean(payload.isTeacher);
+    let verifiedTeacherToken = null;
+
+    if (wantsTeacher) {
+      if (isValidTeacherToken(payload.teacherToken)) {
+        verifiedTeacherToken = payload.teacherToken;
+      } else if (String(payload.teacherPin || '').trim() === TEACHER_PIN) {
+        verifiedTeacherToken = crypto.randomBytes(24).toString('hex');
+        validTeacherTokens.add(verifiedTeacherToken);
+      } else {
+        if (typeof ack === 'function') {
+          ack({ ok: false, error: '教師密碼錯誤！學生請選擇「國一」或「國二」身分加入房間。' });
+        }
+        return;
+      }
+    }
+
     // Leave previous room if any
     if (socket.data.roomCode) {
       socket.leave(`room:${socket.data.roomCode}`);
@@ -215,9 +262,10 @@ io.on('connection', (socket) => {
     const res = roomManager.joinRoom({
       code: payload.code,
       nickname: payload.nickname,
-      grade: payload.grade,
+      grade: wantsTeacher ? 'TEACHER' : payload.grade,
       socketId: socket.id,
-      playerToken: payload.playerToken
+      playerToken: payload.playerToken,
+      isTeacher: wantsTeacher
     });
 
     if (!res.ok) {
@@ -238,6 +286,8 @@ io.on('connection', (socket) => {
         ok: true,
         playerId: res.player.id,
         playerToken: res.player.token,
+        isTeacher: Boolean(res.player.isTeacher),
+        teacherToken: verifiedTeacherToken,
         reconnected: res.reconnected,
         room: roomManager.serializeRoom(res.room, true)
       });

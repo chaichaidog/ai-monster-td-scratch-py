@@ -42,9 +42,10 @@ class RoomManager {
     return fallback;
   }
 
-  createRoom({ code, name, grade = 'G7', maxPlayers = 2, difficulty = 'standard', maxWaves = 8 } = {}) {
+  createRoom({ code, name, grade = 'G7', maxPlayers = 2, difficulty = 'standard', maxWaves = 8, teacherCoop = false } = {}) {
     const validGrade = grade === 'G8' ? 'G8' : 'G7';
-    const validMaxPlayers = Number(maxPlayers) === 1 ? 1 : 2;
+    const isTeacherCoop = Boolean(teacherCoop);
+    const validMaxPlayers = isTeacherCoop ? 2 : (Number(maxPlayers) === 1 ? 1 : 2);
     const validDifficulty = difficulty === 'challenge' ? 'challenge' : 'standard';
     const roomCode = this.normalizeCode(code) || this.generateRoomCode(validGrade);
 
@@ -55,15 +56,18 @@ class RoomManager {
       return { ok: false, error: `房號 ${roomCode} 已存在，請換一個房號` };
     }
 
-    const defaultName = validGrade === 'G7'
-      ? (validMaxPlayers === 2 ? '國一雙人合作防線' : '國一單人特訓防線')
-      : (validMaxPlayers === 1 ? '國二單人挑戰防線' : '國二雙人進階防線');
+    const defaultName = isTeacherCoop
+      ? (validGrade === 'G8' ? '國二師生同樂雙人房' : '國一師生同樂雙人房')
+      : (validGrade === 'G7'
+        ? (validMaxPlayers === 2 ? '國一雙人合作防線' : '國一單人特訓防線')
+        : (validMaxPlayers === 1 ? '國二單人挑戰防線' : '國二雙人進階防線'));
 
     const room = {
       code: roomCode,
       name: String(name || defaultName).trim().slice(0, 32),
       grade: validGrade,
       maxPlayers: validMaxPlayers,
+      teacherCoop: isTeacherCoop,
       turnMode: validMaxPlayers === 1 ? 'solo' : 'turn',
       difficulty: validDifficulty,
       maxWaves: Math.max(4, Math.min(8, Number(maxWaves) || 8)),
@@ -71,8 +75,8 @@ class RoomManager {
       players: [],
       activeTurnPlayerId: null,
       turnNumber: 1,
-      turnDuration: TURN_DURATION_SECONDS,
-      turnTimeLeft: TURN_DURATION_SECONDS,
+      turnDuration: isTeacherCoop ? 35 : TURN_DURATION_SECONDS,
+      turnTimeLeft: isTeacherCoop ? 35 : TURN_DURATION_SECONDS,
       game: createGameState({
         grade: validGrade,
         maxWaves: Number(maxWaves) || 8,
@@ -85,7 +89,8 @@ class RoomManager {
     };
 
     this.rooms.set(roomCode, room);
-    this.logAction(room, '系統', `老師已建立 ${GRADES[validGrade].shortLabel} ${validMaxPlayers === 1 ? '單人' : '雙人輪流'}房間 (${roomCode})`);
+    const modeNote = isTeacherCoop ? '師生同樂雙人' : (validMaxPlayers === 1 ? '單人' : '雙人輪流');
+    this.logAction(room, '系統', `老師已建立 ${GRADES[validGrade].shortLabel} ${modeNote}房間 (${roomCode})`);
     return { ok: true, room };
   }
 
@@ -110,6 +115,51 @@ class RoomManager {
     };
   }
 
+  createTeacherCoopClassSetup() {
+    const g7 = this.createRoom({
+      name: '國一雙人合作戰隊',
+      grade: 'G7',
+      maxPlayers: 2,
+      difficulty: 'standard',
+      maxWaves: 8
+    });
+    const g8 = this.createRoom({
+      name: '國二師生同樂雙人戰隊',
+      grade: 'G8',
+      maxPlayers: 2,
+      teacherCoop: true,
+      difficulty: 'standard',
+      maxWaves: 8
+    });
+    return {
+      ok: g7.ok && g8.ok,
+      rooms: [g7.room, g8.room].filter(Boolean)
+    };
+  }
+
+  enableTeacherCoop(code) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const upgradedFromSolo = room.maxPlayers === 1;
+    room.maxPlayers = 2;
+    room.turnMode = 'turn';
+    room.teacherCoop = true;
+    if (room.turnDuration < 35) {
+      room.turnDuration = 35;
+      if (room.phase === 'lobby' || upgradedFromSolo) {
+        room.turnTimeLeft = 35;
+      }
+    }
+    this.logAction(
+      room,
+      '👩‍🏫 老師',
+      upgradedFromSolo
+        ? '將單人房升級為「師生同樂雙人房」，準備進場陪學生一起玩！'
+        : '開啟「師生同樂模式」，準備加入一起防守！'
+    );
+    return { ok: true, room };
+  }
+
   getRoom(code) {
     return this.rooms.get(this.normalizeCode(code)) || null;
   }
@@ -132,29 +182,36 @@ class RoomManager {
     room.lastActivityAt = Date.now();
   }
 
-  joinRoom({ code, nickname, grade, socketId, playerToken }) {
+  joinRoom({ code, nickname, grade, socketId, playerToken, isTeacher = false }) {
     const room = this.getRoom(code);
     if (!room) {
       return { ok: false, error: '找不到此房號，請向老師確認房號是否正確！' };
     }
 
-    const cleanGrade = grade === 'G8' ? 'G8' : (grade === 'G7' ? 'G7' : null);
-    if (!cleanGrade) {
-      return { ok: false, error: '請先選擇你的年級（國一或國二）' };
+    const teacherJoining = Boolean(isTeacher);
+    let cleanGrade = grade === 'G8' ? 'G8' : (grade === 'G7' ? 'G7' : null);
+
+    if (teacherJoining) {
+      cleanGrade = room.grade;
+    } else {
+      if (!cleanGrade) {
+        return { ok: false, error: '請先選擇你的年級（國一或國二）' };
+      }
+
+      // Strict Grade Separation Rule for students
+      if (room.grade !== cleanGrade) {
+        const roomGradeLabel = GRADES[room.grade].shortLabel;
+        const studentGradeLabel = GRADES[cleanGrade].shortLabel;
+        return {
+          ok: false,
+          code: 'GRADE_MISMATCH',
+          error: `無法進入！房號 ${room.code} 是「${roomGradeLabel}專屬房間」，${studentGradeLabel}同學不能共同一起玩，請向老師領取${studentGradeLabel}專用房號。`
+        };
+      }
     }
 
-    // Strict Grade Separation Rule
-    if (room.grade !== cleanGrade) {
-      const roomGradeLabel = GRADES[room.grade].shortLabel;
-      const studentGradeLabel = GRADES[cleanGrade].shortLabel;
-      return {
-        ok: false,
-        code: 'GRADE_MISMATCH',
-        error: `無法進入！房號 ${room.code} 是「${roomGradeLabel}專屬房間」，${studentGradeLabel}同學不能共同一起玩，請向老師領取${studentGradeLabel}專用房號。`
-      };
-    }
-
-    const cleanNick = String(nickname || '').trim().slice(0, 16);
+    const rawNick = String(nickname || '').trim().slice(0, 16);
+    const cleanNick = rawNick || (teacherJoining ? '👩‍🏫 老師' : '');
     if (!cleanNick) {
       return { ok: false, error: '請輸入你的暱稱' };
     }
@@ -174,6 +231,7 @@ class RoomManager {
       existing.socketId = socketId;
       existing.connected = true;
       existing.nickname = cleanNick;
+      if (teacherJoining) existing.isTeacher = true;
       room.lastActivityAt = Date.now();
       this.logAction(room, cleanNick, '重新連線回到房間');
       return { ok: true, room, player: existing, reconnected: true };
@@ -182,6 +240,18 @@ class RoomManager {
     // Reject duplicate active nickname
     if (room.players.some((p) => p.nickname === cleanNick && p.connected)) {
       return { ok: false, error: `房內已有暱稱「${cleanNick}」，請換一個暱稱` };
+    }
+
+    // Auto-promote a solo room to 2-player co-op when a verified teacher joins to play together
+    if (teacherJoining && room.maxPlayers === 1 && room.players.length <= 1) {
+      room.maxPlayers = 2;
+      room.turnMode = 'turn';
+      room.teacherCoop = true;
+      if (room.turnDuration < 35) {
+        room.turnDuration = 35;
+        room.turnTimeLeft = 35;
+      }
+      this.logAction(room, '👩‍🏫 老師', '將單人房升級為師生同樂雙人房，進來陪你一起打！');
     }
 
     if (room.players.length >= room.maxPlayers) {
@@ -197,8 +267,9 @@ class RoomManager {
       socketId,
       nickname: cleanNick,
       grade: cleanGrade,
+      isTeacher: teacherJoining,
       slotIndex: room.players.length + 1,
-      ready: false,
+      ready: room.phase === 'playing',
       connected: true
     };
 
@@ -207,7 +278,14 @@ class RoomManager {
       room.activeTurnPlayerId = player.id;
     }
 
-    this.logAction(room, cleanNick, `進入了房間（第 ${player.slotIndex} 位，${GRADES[cleanGrade].shortLabel}）`);
+    const roleTag = teacherJoining ? '👩‍🏫 老師陪玩' : GRADES[cleanGrade].shortLabel;
+    this.logAction(
+      room,
+      cleanNick,
+      room.phase === 'playing'
+        ? `中途加入一起作戰（第 ${player.slotIndex} 位，${roleTag}）`
+        : `進入了房間（第 ${player.slotIndex} 位，${roleTag}）`
+    );
     return { ok: true, room, player, reconnected: false };
   }
 
@@ -568,6 +646,7 @@ class RoomManager {
       gradeLabel: GRADES[room.grade].label,
       gradeShort: GRADES[room.grade].shortLabel,
       maxPlayers: room.maxPlayers,
+      teacherCoop: Boolean(room.teacherCoop),
       turnMode: room.turnMode,
       difficulty: room.difficulty,
       maxWaves: room.maxWaves,
@@ -576,6 +655,7 @@ class RoomManager {
         id: p.id,
         nickname: p.nickname,
         grade: p.grade,
+        isTeacher: Boolean(p.isTeacher),
         slotIndex: p.slotIndex,
         ready: p.ready,
         connected: p.connected

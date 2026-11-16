@@ -23,11 +23,15 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.equal(homeRes.status, 200);
     const homeHtml = await homeRes.text();
     assert.ok(homeHtml.includes('AI 怪物塔防戰'));
+    assert.ok(homeHtml.includes('data-grade="TEACHER"'));
+    assert.ok(homeHtml.includes('input-teacher-pin'));
 
     const teacherPageRes = await fetch(`${baseUrl}/teacher`);
     assert.equal(teacherPageRes.status, 200);
     const teacherHtml = await teacherPageRes.text();
     assert.ok(teacherHtml.includes('老師控制台'));
+    assert.ok(teacherHtml.includes('btn-quick-setup-coop'));
+    assert.ok(teacherHtml.includes('spec-btn-coop-join'));
 
     const badLogin = await fetch(`${baseUrl}/api/teacher/login`, {
       method: 'POST',
