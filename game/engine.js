@@ -3,6 +3,7 @@ const {
   MAP_HEIGHT,
   PATH_WAYPOINTS,
   TURRET_SLOTS,
+  MAPS,
   WEAPONS,
   SKILLS,
   GRADES,
@@ -14,40 +15,59 @@ const {
   DEFAULT_FUNCTIONS,
   PYTHON_BOUNTIES,
   TIMED_ENDLESS_DURATION_SEC,
-  TIMED_BOSS_SPAWN_REMAINING_SEC
+  TIMED_BOSS_SPAWN_REMAINING_SEC,
+  RELIC_CARDS,
+  PYTHON_CHEST_QUIZZES
 } = require('./constants');
 const PythonTurretParser = require('../public/js/pythonParser');
 const ScratchTranspiler = require('../public/js/scratchTranspiler');
 
-// Precompute path segments for fast position lookups
-const PATH_SEGMENTS = [];
-let TOTAL_PATH_LENGTH = 0;
-
-for (let i = 0; i < PATH_WAYPOINTS.length - 1; i++) {
-  const a = PATH_WAYPOINTS[i];
-  const b = PATH_WAYPOINTS[i + 1];
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy);
-  PATH_SEGMENTS.push({
-    ax: a.x,
-    ay: a.y,
-    bx: b.x,
-    by: b.y,
-    dx,
-    dy,
-    len,
-    startDist: TOTAL_PATH_LENGTH,
-    endDist: TOTAL_PATH_LENGTH + len
-  });
-  TOTAL_PATH_LENGTH += len;
+function buildLaneGeometry(waypoints) {
+  const segments = [];
+  let totalLength = 0;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i];
+    const b = waypoints[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    segments.push({
+      ax: a.x,
+      ay: a.y,
+      bx: b.x,
+      by: b.y,
+      dx,
+      dy,
+      len,
+      startDist: totalLength,
+      endDist: totalLength + len
+    });
+    totalLength += len;
+  }
+  return { waypoints, segments, totalLength };
 }
 
-function getPositionAtDistance(distance) {
-  const clamped = Math.max(0, Math.min(TOTAL_PATH_LENGTH, distance));
-  for (let i = 0; i < PATH_SEGMENTS.length; i++) {
-    const seg = PATH_SEGMENTS[i];
-    if (clamped <= seg.endDist || i === PATH_SEGMENTS.length - 1) {
+const MAP_GEOMETRIES = {};
+for (const [mId, mDef] of Object.entries(MAPS)) {
+  MAP_GEOMETRIES[mId] = (mDef.paths || [PATH_WAYPOINTS]).map((pts) => buildLaneGeometry(pts));
+}
+const TOTAL_PATH_LENGTH = MAP_GEOMETRIES.classic_s[0].totalLength;
+
+function getMapDef(mapId) {
+  return MAPS[mapId] || MAPS.classic_s;
+}
+
+function getLaneGeometry(mapId = 'classic_s', laneIndex = 0) {
+  const lanes = MAP_GEOMETRIES[mapId] || MAP_GEOMETRIES.classic_s;
+  return lanes[laneIndex % lanes.length] || lanes[0];
+}
+
+function getPositionAtDistance(distance, mapId = 'classic_s', laneIndex = 0) {
+  const geom = getLaneGeometry(mapId, laneIndex);
+  const clamped = Math.max(0, Math.min(geom.totalLength, distance));
+  for (let i = 0; i < geom.segments.length; i++) {
+    const seg = geom.segments[i];
+    if (clamped <= seg.endDist || i === geom.segments.length - 1) {
       const t = seg.len > 0 ? (clamped - seg.startDist) / seg.len : 0;
       return {
         x: seg.ax + seg.dx * t,
@@ -55,7 +75,7 @@ function getPositionAtDistance(distance) {
       };
     }
   }
-  const last = PATH_WAYPOINTS[PATH_WAYPOINTS.length - 1];
+  const last = geom.waypoints[geom.waypoints.length - 1];
   return { x: last.x, y: last.y };
 }
 
@@ -111,7 +131,7 @@ function sanitizeTurretConfig(raw = {}, base = {}) {
   };
 }
 
-function calcTurretCost(cfg) {
+function calcTurretCost(cfg, relics = []) {
   if (cfg && cfg.active === false) return 0;
   const dpsPart = cfg.damage * cfg.fireRate * 0.8;
   const rangePart = Math.max(0, cfg.range - 120) * 0.12;
@@ -125,15 +145,16 @@ function calcTurretCost(cfg) {
   const overDmgTax = Math.max(0, cfg.damage - 35) * 1.4;
   const overRateTax = Math.max(0, cfg.fireRate - 2.0) * 18;
   const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
-  const fnDiscount = cfg && cfg.boundFunctionId ? 0.85 : 1.0;
+  const hasFnMaster = Array.isArray(relics) && relics.includes('fn_master');
+  const fnDiscount = cfg && cfg.boundFunctionId ? (hasFnMaster ? 0.7 : 0.85) : 1.0;
   return Math.max(4, Math.round(rawCost * fnDiscount));
 }
 
-function calcTotalComputeUsed(turrets) {
-  return turrets.reduce((sum, t) => sum + calcTurretCost(t), 0);
+function calcTotalComputeUsed(turrets, relics = []) {
+  return turrets.reduce((sum, t) => sum + calcTurretCost(t, relics), 0);
 }
 
-function createInitialTurrets() {
+function createInitialTurrets(mapId = 'classic_s') {
   const emptyBaseline = {
     damage: 20,
     fireRate: 1.25,
@@ -144,8 +165,9 @@ function createInitialTurrets() {
     loopMode: 'none',
     loopCount: 1
   };
+  const slots = getMapDef(mapId).turretSlots || TURRET_SLOTS;
 
-  return TURRET_SLOTS.map((slot) => {
+  return slots.map((slot) => {
     const blocks = [];
     const code = ScratchTranspiler.blocksToPlainPython(blocks, [], slot.name);
     const cfg = sanitizeTurretConfig(emptyBaseline);
@@ -186,12 +208,14 @@ function createInitialTurrets() {
 }
 
 function buildEndlessWaveDef(waveNum) {
-  const scaleIdx = waveNum - WAVES.length;
-  const countBoost = Math.min(10, scaleIdx * 2);
+  const extra = waveNum - WAVES.length;
   const spawns = [
-    { type: 'phantom', count: 5 + Math.floor(countBoost / 2), interval: 0.9 },
-    { type: 'shield', count: 4 + Math.floor(countBoost / 2), interval: 1.25 },
-    { type: 'tank', count: 3 + Math.floor(countBoost / 3), interval: 1.55 },
+    { type: 'fast', count: 5 + Math.min(8, extra), interval: 0.9 },
+    { type: 'splitter', count: 3 + Math.min(4, Math.floor(extra / 2)), interval: 1.35 },
+    { type: 'shield', count: 3 + Math.min(5, Math.floor(extra / 2)), interval: 1.3 },
+    { type: 'medic', count: 1 + (extra >= 3 ? 1 : 0), interval: 2.0 },
+    { type: 'stealth', count: 2 + Math.min(5, extra), interval: 1.15 },
+    { type: 'tank', count: 3 + Math.min(5, Math.floor(extra / 2)), interval: 1.65 },
     { type: 'gold_slime', count: 1, interval: 1.0 }
   ];
   if (waveNum % 2 === 0) {
@@ -202,7 +226,7 @@ function buildEndlessWaveDef(waveNum) {
   return {
     wave: waveNum,
     title: `🔥 無盡第 ${waveNum} 波`,
-    hint: `無盡挑戰強度提升！善用金幣技能與移動巡邏防線撐下去！`,
+    hint: `無盡挑戰強度提升！注意分裂怪、醫護機與毒霧區，善用移動積木＋戰術晶片撐下去！`,
     spawns
   };
 }
@@ -216,7 +240,7 @@ function pickWaveModifier(waveNum) {
   return null;
 }
 
-function buildWaveSpawnQueue(waveIndex, gradeCfg, difficulty = 'standard', modifier = null) {
+function buildWaveSpawnQueue(waveIndex, gradeCfg, difficulty = 'standard', modifier = null, mapId = 'classic_s') {
   const waveDef = WAVES[waveIndex] || buildEndlessWaveDef(waveIndex + 1);
   const endlessExtra = waveIndex >= WAVES.length ? 1 + (waveIndex - WAVES.length + 1) * 0.16 : 1.0;
   const diffScale = (difficulty === 'challenge' ? 1.15 : 1.0) * endlessExtra;
@@ -224,15 +248,21 @@ function buildWaveSpawnQueue(waveIndex, gradeCfg, difficulty = 'standard', modif
   const speedMult = gradeCfg.speedMultiplier * (difficulty === 'challenge' ? 1.05 : 1.0) * (modifier ? modifier.speedMult : 1.0);
   const shieldMult = hpMult * (modifier ? modifier.shieldMult : 1.0);
   const coinMult = modifier ? modifier.coinMult : 1.0;
+  const laneCount = (MAP_GEOMETRIES[mapId] || MAP_GEOMETRIES.classic_s).length;
 
   const queue = [];
   let offset = 0;
+  let spawnCounter = 0;
   for (const group of waveDef.spawns) {
     const template = MONSTER_TYPES[group.type];
+    if (!template) continue;
     for (let i = 0; i < group.count; i++) {
       offset += group.interval;
+      const laneIndex = spawnCounter % laneCount;
+      spawnCounter += 1;
       queue.push({
         spawnAt: offset,
+        laneIndex,
         template: {
           ...template,
           maxHp: Math.round(template.hp * hpMult),
@@ -253,10 +283,12 @@ function createGameState({
   maxWaves = WAVES.length,
   difficulty = 'standard',
   gameMode = 'classic',
-  timeLimitSeconds = TIMED_ENDLESS_DURATION_SEC
+  timeLimitSeconds = TIMED_ENDLESS_DURATION_SEC,
+  mapId = 'classic_s'
 } = {}) {
   const gradeCfg = GRADES[grade] || GRADES.G7;
-  const turrets = createInitialTurrets();
+  const mapDef = getMapDef(mapId);
+  const turrets = createInitialTurrets(mapDef.id);
   const functions = DEFAULT_FUNCTIONS.map((f) => ({
     ...f,
     blocks: f.blocks ? f.blocks.map((b) => ({ ...b })) : [],
@@ -269,6 +301,11 @@ function createGameState({
   return {
     grade: gradeCfg.id,
     difficulty,
+    mapId: mapDef.id,
+    mapName: mapDef.shortName,
+    tacticalZones: (mapDef.tacticalZones || []).map((z) => ({ ...z })),
+    hazardZones: [],
+    hazardSpawnTimer: 32,
     gameMode: isTimed20 ? 'timed20' : 'classic',
     status: 'playing', // 'playing' | 'paused' | 'victory' | 'defeat'
     endlessMode: isTimed20,
@@ -277,6 +314,10 @@ function createGameState({
     timeRemaining: cleanLimit,
     finalBossSpawned: false,
     finalBossCleared: false,
+    relics: [],
+    pendingRelicChoice: null,
+    relicAutoPickTimer: 0,
+    activeChestQuiz: null,
     elapsed: 0,
     wave: 1,
     totalWaves,
@@ -285,11 +326,11 @@ function createGameState({
     waveModifier: null,
     waveDelay: 15.0,
     waveSpawnClock: 0,
-    spawnQueue: buildWaveSpawnQueue(0, gradeCfg, difficulty, null),
+    spawnQueue: buildWaveSpawnQueue(0, gradeCfg, difficulty, null, mapDef.id),
     baseHp: gradeCfg.baseMaxHp,
     baseMaxHp: gradeCfg.baseMaxHp,
     computeBudget: gradeCfg.startingBudget,
-    computeUsed: calcTotalComputeUsed(turrets),
+    computeUsed: calcTotalComputeUsed(turrets, []),
     coins: gradeCfg.startingCoins || 10,
     skillCooldowns: { orbital: 0, emp: 0, repair: 0, overclock: 0 },
     empFreezeTimer: 0,
@@ -383,20 +424,116 @@ function checkBountyProgress(state) {
   }
 }
 
+function hasRelic(state, relicId) {
+  return Boolean(state && Array.isArray(state.relics) && state.relics.includes(relicId));
+}
+
+function getTurretZoneBuffs(state, turret) {
+  let fireRateMult = 1.0;
+  let rangeBonus = hasRelic(state, 'range_boost') ? 25 : 0;
+  let inHazard = false;
+  const labels = [];
+  for (const tile of (state.tacticalZones || [])) {
+    if (Math.hypot(turret.x - tile.x, turret.y - tile.y) <= tile.radius) {
+      if (tile.kind === 'haste' || tile.kind === 'attack_speed') {
+        fireRateMult *= 1.25;
+        labels.push('⚡+25%速');
+      }
+      if (tile.kind === 'range' || tile.kind === 'range_boost') {
+        rangeBonus += 45;
+        labels.push('🎯+45距');
+      }
+    }
+  }
+  for (const haz of (state.hazardZones || [])) {
+    if (Math.hypot(turret.x - haz.x, turret.y - haz.y) <= haz.radius) {
+      if (!haz.kind || haz.kind === 'emp_fog') {
+        fireRateMult *= 0.55;
+        inHazard = true;
+      }
+    }
+  }
+  return {
+    fireRateMult,
+    rangeBonus,
+    inHazard,
+    zoneLabel: labels.length > 0 ? labels.join(' ') : null
+  };
+}
+
+function maybeTriggerRelicChoice(state, nextWaveNum) {
+  if (!RELIC_CARDS || RELIC_CARDS.length === 0) return;
+  if (nextWaveNum % 3 !== 0) return;
+  const available = RELIC_CARDS.filter((c) => !hasRelic(state, c.id));
+  if (available.length === 0) return;
+  const shuffled = [...available].sort(() => Math.random() - 0.5).slice(0, 3);
+  state.pendingRelicChoice = {
+    id: `relic_${nextWaveNum}_${Date.now().toString(36)}`,
+    wave: nextWaveNum,
+    options: shuffled
+  };
+  state.relicAutoPickTimer = 20.0;
+}
+
+function chooseRelic(state, relicId) {
+  if (!state.pendingRelicChoice) {
+    return { ok: false, error: '目前沒有待選的戰術晶片' };
+  }
+  const picked = state.pendingRelicChoice.options.find((o) => o.id === relicId)
+    || RELIC_CARDS.find((c) => c.id === relicId && !hasRelic(state, c.id));
+  if (!picked) {
+    return { ok: false, error: '找不到該張晶片選項' };
+  }
+  if (!state.relics.includes(picked.id)) {
+    state.relics.push(picked.id);
+  }
+  state.pendingRelicChoice = null;
+  state.relicAutoPickTimer = 0;
+
+  for (const t of state.turrets) {
+    t.cost = calcTurretCost(t, state.relics);
+  }
+  state.computeUsed = calcTotalComputeUsed(state.turrets, state.relics);
+
+  pushEvent(state, {
+    kind: 'relic_picked',
+    relicId: picked.id,
+    name: picked.name,
+    desc: picked.desc
+  });
+  return { ok: true, relic: picked };
+}
+
 function spawnSupplyPickup(state) {
-  const wp = PATH_WAYPOINTS[Math.floor(Math.random() * PATH_WAYPOINTS.length)];
+  const mapPaths = (getMapDef(state.mapId).paths) || [PATH_WAYPOINTS];
+  const pts = mapPaths[Math.floor(Math.random() * mapPaths.length)];
+  const wp = pts[Math.floor(Math.random() * pts.length)];
   const offsetX = Math.round((Math.random() - 0.5) * 140);
   const offsetY = Math.round((Math.random() - 0.5) * 110);
   const x = Math.round(clamp(wp.x + offsetX, 75, MAP_WIDTH - 75));
   const y = Math.round(clamp(wp.y + offsetY, 70, MAP_HEIGHT - 70));
-  const kind = Math.random() < 0.72 ? 'coin' : 'energy';
+
+  const roll = Math.random();
+  let kind = 'coin';
+  let label = '+5🪙';
+  let quiz = null;
+  if (roll < 0.32 && PYTHON_CHEST_QUIZZES && PYTHON_CHEST_QUIZZES.length > 0 && !state.activeChestQuiz) {
+    kind = 'py_chest';
+    label = '🔐密碼箱';
+    quiz = PYTHON_CHEST_QUIZZES[Math.floor(Math.random() * PYTHON_CHEST_QUIZZES.length)];
+  } else if (roll < 0.52) {
+    kind = 'energy';
+    label = '-2.5s⚡';
+  }
   state.pickups.push({
     id: state.nextEntityId++,
     kind,
     x,
     y,
-    ttl: 14,
-    label: kind === 'coin' ? '+8🪙' : '-2.5s⚡'
+    ttl: kind === 'py_chest' ? 16 : 14,
+    maxTtl: kind === 'py_chest' ? 16 : 14,
+    label,
+    quiz
   });
 }
 
@@ -406,6 +543,25 @@ function collectPickup(state, pickupId, collectorName = '隊友') {
   if (idx === -1) return { ok: false, error: '補給已經被撿走或消失囉' };
   const [pickup] = state.pickups.splice(idx, 1);
   state.stats.pickupsCollected += 1;
+
+  if (pickup.kind === 'py_chest' && pickup.quiz) {
+    state.activeChestQuiz = {
+      id: pickup.quiz.id,
+      question: pickup.quiz.question,
+      options: pickup.quiz.options,
+      correctIndex: pickup.quiz.correctIndex,
+      explain: pickup.quiz.explain,
+      picker: collectorName
+    };
+    pushEvent(state, {
+      kind: 'pickup_collected',
+      x: pickup.x,
+      y: pickup.y,
+      text: `${collectorName} 開啟 🔐 Python 寶箱!`,
+      color: '#c084fc'
+    });
+    return { ok: true, pickup, chestQuiz: state.activeChestQuiz };
+  }
 
   if (pickup.kind === 'coin') {
     state.coins += 5;
@@ -427,6 +583,38 @@ function collectPickup(state, pickupId, collectorName = '隊友') {
     color: pickup.kind === 'coin' ? '#fde047' : '#34d399'
   });
   return { ok: true, pickup };
+}
+
+function answerChestQuiz(state, choiceIndex) {
+  const quiz = state.activeChestQuiz;
+  if (!quiz) return { ok: false, error: '目前沒有待開啟的密碼寶箱' };
+  const idx = Number(choiceIndex);
+  const correct = idx === quiz.correctIndex;
+  const rewardCoins = correct ? 15 : 4;
+  const rewardBudget = correct ? 4 : 0;
+
+  state.coins += rewardCoins;
+  state.computeBudget += rewardBudget;
+  state.score += correct ? 50 : 10;
+  state.activeChestQuiz = null;
+
+  pushEvent(state, {
+    kind: 'chest_answered',
+    correct,
+    rewardCoins,
+    rewardBudget,
+    text: correct
+      ? `🎉 Python 密碼答對！全隊 +${rewardCoins}🪙 ＋ +${rewardBudget}算力！`
+      : `💡 答案是「${quiz.options[quiz.correctIndex]}」（安慰獎 +${rewardCoins}🪙）`
+  });
+  return {
+    ok: true,
+    correct,
+    rewardCoins,
+    rewardBudget,
+    explain: quiz.explain,
+    correctOption: quiz.options[quiz.correctIndex]
+  };
 }
 
 function addMapPing(state, { x, y, sender = '隊友', label = '集火這裡!' } = {}) {
@@ -606,10 +794,11 @@ function sortCandidatesByFallback(candidates, fallbackTarget, turret) {
   return list;
 }
 
-function selectTargetsForTurret(turret, monsters, limit = 1) {
+function selectTargetsForTurret(turret, monsters, limit = 1, effectiveRange = null) {
+  const maxDist = effectiveRange !== null ? effectiveRange : turret.range;
   const inRange = monsters.filter((m) => {
     const dist = Math.hypot(m.x - turret.x, m.y - turret.y);
-    return dist <= turret.range;
+    return dist <= maxDist;
   });
 
   if (inRange.length === 0) return [];
@@ -693,6 +882,7 @@ function spawnProjectile(state, turret, target, rawDamage, mods, isBurst, isMult
     id: state.nextEntityId++,
     turretId: turret.id,
     weapon: turret.weapon || 'laser',
+    isMulti: Boolean(isMulti),
     x: turret.x + Math.cos(angle) * 18,
     y: turret.y + Math.sin(angle) * 18,
     targetId: target.id,
@@ -719,6 +909,9 @@ function spawnProjectile(state, turret, target, rawDamage, mods, isBurst, isMult
 
 function dealDirectDamage(state, monster, rawDmg, hpMult, shieldMult, armorIgnore = false) {
   let dmgLeft = rawDmg;
+  if (monster.type === 'stealth' && (monster.progress || 0) < 0.55 && (monster.slowTimer || 0) <= 0) {
+    dmgLeft = Math.max(1, Math.round(dmgLeft * 0.5));
+  }
   let shieldBroken = false;
   let totalDealt = 0;
 
@@ -754,7 +947,8 @@ function registerMonsterKill(state, monster) {
   if (state.combo > state.bestCombo) state.bestCombo = state.combo;
 
   const comboBonusCoins = state.combo > 0 && state.combo % 10 === 0 ? 6 : 0;
-  const coinReward = (monster.coins || 5) + comboBonusCoins;
+  const ifBountyCoins = (monster._lastCondMatched && hasRelic(state, 'if_bounty')) ? 2 : 0;
+  const coinReward = (monster.coins || 5) + comboBonusCoins + ifBountyCoins;
   state.coins += coinReward;
   state.score += monster.score + (state.combo >= 5 ? Math.min(25, state.combo) : 0);
 
@@ -763,6 +957,41 @@ function registerMonsterKill(state, monster) {
   }
   if (monster.type === 'gold_slime') {
     unlockAchievement(state, 'gold_hunter', '💰 黃金史萊姆獵手');
+  }
+
+  if (monster.type === 'splitter' && !monster._noSplit && !monster._lastHitWasAoeOrMulti) {
+    const laneIdx = Number.isInteger(monster.laneIndex) ? monster.laneIndex : 0;
+    const laneGeom = getLaneGeometry(state.mapId, laneIdx);
+    const childHp = Math.max(16, Math.round((monster.maxHp || 85) * 0.36));
+    const childBase = MONSTER_TYPES.swarm;
+    [-16, 14].forEach((offset) => {
+      const dist = Math.max(0, Math.min(laneGeom.totalLength - 10, (monster.distance || 0) + offset));
+      const pos = getPositionAtDistance(dist, state.mapId, laneIdx);
+      state.monsters.push({
+        id: state.nextEntityId++,
+        ...childBase,
+        name: '分裂幼體',
+        tag: '分裂',
+        maxHp: childHp,
+        hp: childHp,
+        maxShield: 0,
+        shield: 0,
+        speed: Math.round((monster.speed || 60) * 1.15),
+        baseDamage: Math.max(4, Math.round((monster.baseDamage || 10) * 0.5)),
+        coins: 3,
+        score: 8,
+        radius: 11,
+        color: '#f472b6',
+        laneIndex: laneIdx,
+        distance: dist,
+        progress: laneGeom.totalLength > 0 ? dist / laneGeom.totalLength : 0,
+        x: pos.x,
+        y: pos.y,
+        slowTimer: 0,
+        _noSplit: true
+      });
+    });
+    pushEvent(state, { kind: 'splitter_spawn', x: monster.x, y: monster.y, count: 2 });
   }
 
   pushEvent(state, {
@@ -779,6 +1008,9 @@ function registerMonsterKill(state, monster) {
 }
 
 function applyDamageToMonster(state, monster, proj) {
+  monster._lastCondMatched = Boolean(proj.condMatched);
+  monster._lastHitWasAoeOrMulti = Boolean(proj.isMulti || proj.weapon === 'chain' || proj.weapon === 'plasma');
+
   const { totalDealt, shieldBroken } = dealDirectDamage(
     state,
     monster,
@@ -794,17 +1026,26 @@ function applyDamageToMonster(state, monster, proj) {
 
   // Weapon-specific special effects!
   if (proj.weapon === 'frost') {
-    monster.slowTimer = Math.max(monster.slowTimer || 0, 2.2);
-    for (const m of state.monsters) {
-      if (m.id !== monster.id && m.hp > 0 && Math.hypot(m.x - monster.x, m.y - monster.y) <= 60) {
-        m.slowTimer = Math.max(m.slowTimer || 0, 1.8);
+    const hasFrostNova = hasRelic(state, 'frost_nova');
+    const frostDur = hasFrostNova ? 3.0 : 2.2;
+    const frostRad = hasFrostNova ? 95 : 60;
+    monster.slowTimer = Math.max(monster.slowTimer || 0, frostDur);
+    for (const m of [...state.monsters]) {
+      if (m.id !== monster.id && m.hp > 0 && Math.hypot(m.x - monster.x, m.y - monster.y) <= frostRad) {
+        m.slowTimer = Math.max(m.slowTimer || 0, hasFrostNova ? 2.6 : 1.8);
+        if (hasFrostNova) {
+          m._lastHitWasAoeOrMulti = true;
+          dealDirectDamage(state, m, 8, 1.0, 1.0, false);
+          if (m.hp <= 0) registerMonsterKill(state, m);
+        }
       }
     }
-    pushEvent(state, { kind: 'frost_ring', x: monster.x, y: monster.y, radius: 55 });
+    pushEvent(state, { kind: 'frost_ring', x: monster.x, y: monster.y, radius: frostRad });
   } else if (proj.weapon === 'plasma') {
     const splashDmg = Math.max(5, Math.round(proj.damage * 0.65));
-    for (const m of state.monsters) {
+    for (const m of [...state.monsters]) {
       if (m.id !== monster.id && m.hp > 0 && Math.hypot(m.x - monster.x, m.y - monster.y) <= 68) {
+        m._lastHitWasAoeOrMulti = true;
         dealDirectDamage(state, m, splashDmg, 1.0, 1.0, true);
         if (m.hp <= 0) registerMonsterKill(state, m);
       }
@@ -819,6 +1060,7 @@ function applyDamageToMonster(state, monster, proj) {
     let prevY = monster.y;
     const arcDmg = Math.max(4, Math.round(proj.damage * 0.55));
     for (const hop of nearby) {
+      hop._lastHitWasAoeOrMulti = true;
       dealDirectDamage(state, hop, arcDmg, 1.0, 1.1, false);
       pushEvent(state, { kind: 'chain_arc', x1: prevX, y1: prevY, x2: hop.x, y2: hop.y });
       prevX = hop.x;
@@ -845,6 +1087,15 @@ function applyDamageToMonster(state, monster, proj) {
 function advanceGameTick(state, dt) {
   if (state.status !== 'playing') return;
 
+  // Pause wave & monster progression while choosing a roguelike relic card
+  if (state.pendingRelicChoice) {
+    state.relicAutoPickTimer = Math.max(0, (state.relicAutoPickTimer || 20) - dt);
+    if (state.relicAutoPickTimer <= 0 && state.pendingRelicChoice.options.length > 0) {
+      chooseRelic(state, state.pendingRelicChoice.options[0].id);
+    }
+    return;
+  }
+
   state.elapsed += dt;
 
   // Cooldowns & Combo decay
@@ -861,7 +1112,7 @@ function advanceGameTick(state, dt) {
     if (state.comboTimer === 0) state.combo = 0;
   }
 
-  // Update map pings & supply pickups
+  // Update map pings, supply pickups, & dynamic hazard zones
   state.pings = state.pings
     .map((p) => ({ ...p, ttl: p.ttl - dt }))
     .filter((p) => p.ttl > 0);
@@ -869,6 +1120,47 @@ function advanceGameTick(state, dt) {
   state.pickups = state.pickups
     .map((p) => ({ ...p, ttl: p.ttl - dt }))
     .filter((p) => p.ttl > 0);
+
+  if (hasRelic(state, 'auto_magnet') && state.pickups.length > 0) {
+    const magnetTargets = state.pickups.filter((p) => p.kind !== 'py_chest' && (p.maxTtl - p.ttl) >= 1.2);
+    for (const mp of magnetTargets) {
+      collectPickup(state, mp.id, '🧲 磁鐵芯片');
+    }
+  }
+
+  state.hazardZones = (state.hazardZones || [])
+    .map((hz) => ({ ...hz, ttl: hz.ttl - dt }))
+    .filter((hz) => hz.ttl > 0);
+
+  if (state.wave >= 2 && state.waveDelay <= 0 && (state.monsters.length > 0 || state.spawnQueue.length > 0)) {
+    state.hazardSpawnTimer = (state.hazardSpawnTimer ?? 14) - dt;
+    if (state.hazardSpawnTimer <= 0) {
+      if (state.hazardZones.length < 2 && state.turrets.length > 0) {
+        const activeTurrets = state.turrets.filter((t) => t.active);
+        const pool = activeTurrets.length > 0 ? activeTurrets : state.turrets;
+        const targetTurret = pool[Math.floor(Math.random() * pool.length)];
+        if (targetTurret) {
+          state.hazardZones.push({
+            id: state.nextEntityId++,
+            kind: 'emp_fog',
+            x: Math.round(targetTurret.x),
+            y: Math.round(targetTurret.y),
+            radius: 62,
+            ttl: 15,
+            maxTtl: 15,
+            label: '☠️ 電磁減速霧 -45%射速'
+          });
+          pushEvent(state, {
+            kind: 'hazard_spawn',
+            x: Math.round(targetTurret.x),
+            y: Math.round(targetTurret.y),
+            turretName: targetTurret.name
+          });
+        }
+      }
+      state.hazardSpawnTimer = 18;
+    }
+  }
 
   if (state.waveDelay <= 0 && (state.monsters.length > 0 || state.spawnQueue.length > 0)) {
     state.pickupSpawnTimer -= dt;
@@ -890,11 +1182,13 @@ function advanceGameTick(state, dt) {
       const gradeCfg = GRADES[state.grade] || GRADES.G7;
       const tpl = MONSTER_TYPES.final_timed_boss;
       const waveScale = 1 + Math.max(0, state.wave - 1) * 0.12;
-      const start = PATH_WAYPOINTS[0];
+      const laneIndex = 0;
+      const start = (getLaneGeometry(state.mapId, laneIndex).waypoints[0]) || PATH_WAYPOINTS[0];
       state.monsters.push({
         id: state.nextEntityId++,
         ...tpl,
         isFinalTimedBoss: true,
+        laneIndex,
         maxHp: Math.round(tpl.hp * gradeCfg.hpMultiplier * waveScale),
         hp: Math.round(tpl.hp * gradeCfg.hpMultiplier * waveScale),
         maxShield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
@@ -923,32 +1217,56 @@ function advanceGameTick(state, dt) {
     state.waveSpawnClock += dt;
     while (state.spawnQueue.length > 0 && state.spawnQueue[0].spawnAt <= state.waveSpawnClock) {
       const next = state.spawnQueue.shift();
-      const start = PATH_WAYPOINTS[0];
+      const laneIdx = Number.isInteger(next.laneIndex) ? next.laneIndex : 0;
+      const start = (getLaneGeometry(state.mapId, laneIdx).waypoints[0]) || PATH_WAYPOINTS[0];
       state.monsters.push({
         id: state.nextEntityId++,
         ...next.template,
+        laneIndex: laneIdx,
         x: start.x,
         y: start.y,
         distance: 0,
         progress: 0,
-        slowTimer: 0
+        slowTimer: 0,
+        healTimer: next.template.type === 'medic' ? 2.2 : 0
       });
     }
   }
 
-  // 2. Move monsters along path
+  // 2. Move monsters along their assigned lane & apply medic aura
   const survivingMonsters = [];
   for (const m of state.monsters) {
     if (m.hp <= 0) continue;
     if (m.slowTimer > 0) {
       m.slowTimer = Math.max(0, m.slowTimer - dt);
     }
+
+    if (m.type === 'medic') {
+      m.healTimer = (m.healTimer ?? 2.2) - dt;
+      if (m.healTimer <= 0) {
+        m.healTimer = 2.2;
+        let healedAny = false;
+        for (const ally of state.monsters) {
+          if (ally.hp > 0 && ally.hp < ally.maxHp && Math.hypot(ally.x - m.x, ally.y - m.y) <= 95) {
+            const gain = Math.max(4, Math.round(ally.maxHp * 0.14));
+            ally.hp = Math.min(ally.maxHp, ally.hp + gain);
+            healedAny = true;
+          }
+        }
+        if (healedAny) {
+          pushEvent(state, { kind: 'heal_pulse', x: m.x, y: m.y, radius: 95 });
+        }
+      }
+    }
+
+    const laneIdx = Number.isInteger(m.laneIndex) ? m.laneIndex : 0;
+    const laneLen = getLaneGeometry(state.mapId, laneIdx).totalLength || TOTAL_PATH_LENGTH;
     const freezeFactor = state.empFreezeTimer > 0 ? 0.05 : 1.0;
     const moveSpeed = (m.slowTimer > 0 ? m.speed * 0.65 : m.speed) * freezeFactor;
     m.distance += moveSpeed * dt;
-    m.progress = TOTAL_PATH_LENGTH > 0 ? m.distance / TOTAL_PATH_LENGTH : 1;
+    m.progress = laneLen > 0 ? m.distance / laneLen : 1;
 
-    if (m.distance >= TOTAL_PATH_LENGTH) {
+    if (m.distance >= laneLen) {
       state.baseHp = Math.max(0, state.baseHp - m.baseDamage);
       state.combo = 0;
       pushEvent(state, {
@@ -963,7 +1281,7 @@ function advanceGameTick(state, dt) {
       continue;
     }
 
-    const pos = getPositionAtDistance(m.distance);
+    const pos = getPositionAtDistance(m.distance, state.mapId, laneIdx);
     m.x = pos.x;
     m.y = pos.y;
     survivingMonsters.push(m);
@@ -972,12 +1290,14 @@ function advanceGameTick(state, dt) {
 
   if (state.status !== 'playing') return;
 
-  // 3. Move & Patrol Turrets, then target & fire
+  // 3. Move & Patrol Turrets, apply zone/relic buffs, then target & fire
   for (const turret of state.turrets) {
     if (!turret.active) {
       turret.lastTargetId = null;
       turret.lastConditionActive = false;
       turret.loopStep = 0;
+      turret.inHazard = false;
+      turret.zoneBuffLabel = null;
       continue;
     }
 
@@ -1002,12 +1322,18 @@ function advanceGameTick(state, dt) {
       turret.y = turret.anchorY;
     }
 
+    const zoneBuffs = getTurretZoneBuffs(state, turret);
+    const effectiveFireRate = turret.fireRate * zoneBuffs.fireRateMult;
+    const effectiveRange = turret.range + zoneBuffs.rangeBonus;
+    turret.inHazard = zoneBuffs.inHazard;
+    turret.zoneBuffLabel = zoneBuffs.zoneLabel;
+
     if (turret.burstRemaining > 0) {
       turret.burstTimer -= dt;
       if (turret.burstTimer <= 0) {
         let target = state.monsters.find((m) => m.id === turret.burstTargetId);
         if (!target) {
-          const fallback = selectTargetsForTurret(turret, state.monsters, 1);
+          const fallback = selectTargetsForTurret(turret, state.monsters, 1, effectiveRange);
           target = fallback[0] ? fallback[0].monster : null;
         }
         if (target) {
@@ -1029,7 +1355,8 @@ function advanceGameTick(state, dt) {
     if (turret.cooldown > 0 || turret.burstRemaining > 0) continue;
 
     if (turret.loopMode === 'multi' && turret.loopCount > 1) {
-      const picks = selectTargetsForTurret(turret, state.monsters, turret.loopCount);
+      const effCount = turret.loopCount + (hasRelic(state, 'loop_plus') ? 1 : 0);
+      const picks = selectTargetsForTurret(turret, state.monsters, effCount, effectiveRange);
       if (picks.length > 0) {
         const scale = LOOP_MODES.multi.perHitScale[turret.loopCount] || 0.65;
         const shotDmg = Math.max(4, Math.round(turret.damage * scale));
@@ -1044,14 +1371,15 @@ function advanceGameTick(state, dt) {
 
         state.conceptsLearned.loops = true;
         state.stats.loopBursts += 1;
-        turret.cooldown = 1 / (turret.fireRate * fastestCdMult);
+        turret.cooldown = 1 / (effectiveFireRate * fastestCdMult);
       } else {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
         turret.loopStep = 0;
       }
     } else if (turret.loopMode === 'burst' && turret.loopCount > 1) {
-      const picks = selectTargetsForTurret(turret, state.monsters, 1);
+      const effCount = turret.loopCount + (hasRelic(state, 'loop_plus') ? 1 : 0);
+      const picks = selectTargetsForTurret(turret, state.monsters, 1, effectiveRange);
       if (picks.length > 0) {
         const pick = picks[0];
         const mods = computeShotModifiers(turret, pick.evalRes);
@@ -1061,7 +1389,7 @@ function advanceGameTick(state, dt) {
         turret.loopStep = 1;
         spawnProjectile(state, turret, pick.monster, shotDmg, mods, true, false, pick.evalRes.matched);
 
-        turret.burstRemaining = turret.loopCount - 1;
+        turret.burstRemaining = effCount - 1;
         turret.burstTimer = 0.11;
         turret.burstTargetId = pick.monster.id;
         turret.burstMods = mods;
@@ -1069,7 +1397,7 @@ function advanceGameTick(state, dt) {
 
         state.conceptsLearned.loops = true;
         state.stats.loopBursts += 1;
-        turret.cooldown = 1 / (turret.fireRate * mods.cooldownSpeedMult);
+        turret.cooldown = 1 / (effectiveFireRate * mods.cooldownSpeedMult);
       } else {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
@@ -1082,7 +1410,7 @@ function advanceGameTick(state, dt) {
         turret.loopStep = 0;
         continue;
       }
-      const picks = selectTargetsForTurret(turret, state.monsters, 1);
+      const picks = selectTargetsForTurret(turret, state.monsters, 1, effectiveRange);
       if (picks.length > 0) {
         const pick = picks[0];
         const mods = computeShotModifiers(turret, pick.evalRes);
@@ -1091,7 +1419,7 @@ function advanceGameTick(state, dt) {
         if (turret.ammoRemaining > 0) {
           turret.ammoRemaining -= 1;
         }
-        turret.cooldown = 1 / (turret.fireRate * mods.cooldownSpeedMult);
+        turret.cooldown = 1 / (effectiveFireRate * mods.cooldownSpeedMult);
       } else {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
@@ -1168,10 +1496,12 @@ function advanceGameTick(state, dt) {
     state.waveModifier = modifier;
     state.waveDelay = 10.0;
     state.waveSpawnClock = 0;
-    state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier);
+    state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier, state.mapId);
     state.computeBudget += gradeCfg.budgetPerWave;
     state.coins += 8;
     state.score += 60;
+
+    maybeTriggerRelicChoice(state, nextWaveNum);
 
     pushEvent(state, {
       kind: 'wave_clear',
@@ -1205,7 +1535,7 @@ function continueEndlessMode(state) {
   state.waveModifier = modifier;
   state.waveDelay = 8.0;
   state.waveSpawnClock = 0;
-  state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier);
+  state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier, state.mapId);
   state.computeBudget += gradeCfg.budgetPerWave;
   state.coins += 18;
   return true;
@@ -1227,8 +1557,9 @@ function useCommanderSkill(state, skillId) {
   state.stats.skillsUsed += 1;
 
   if (skillId === 'orbital') {
-    for (const m of state.monsters) {
+    for (const m of [...state.monsters]) {
       if (m.hp <= 0) continue;
+      m._lastHitWasAoeOrMulti = true;
       dealDirectDamage(state, m, 115, 1.0, 1.4, true);
       if (m.hp <= 0) registerMonsterKill(state, m);
     }
@@ -1259,7 +1590,7 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
 
   const otherCost = state.turrets
     .filter((t) => t.id !== turretId)
-    .reduce((sum, t) => sum + calcTurretCost(t), 0);
+    .reduce((sum, t) => sum + calcTurretCost(t, state.relics), 0);
 
   if (transpiled.blocks.length === 0) {
     turret.active = false;
@@ -1292,7 +1623,7 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
     ...sanitized,
     active: true,
     boundFunctionId: transpiled.boundFunctionId || null
-  });
+  }, state.relics);
 
   if (otherCost + newCost > state.computeBudget) {
     return {
@@ -1364,10 +1695,10 @@ function updateTurretFromPython(state, turretId, pythonCode) {
     ...sanitized,
     active: true,
     boundFunctionId: parsed.boundFunctionId || null
-  });
+  }, state.relics);
   const otherCost = state.turrets
     .filter((t) => t.id !== turretId)
-    .reduce((sum, t) => sum + calcTurretCost(t), 0);
+    .reduce((sum, t) => sum + calcTurretCost(t, state.relics), 0);
 
   if (otherCost + newCost > state.computeBudget) {
     return {
@@ -1443,7 +1774,7 @@ function saveFunctionFromPython(state, pythonCode, existingId = null) {
     const pendingUpdates = [];
     let totalProjectedCost = state.turrets
       .filter((t) => t.boundFunctionId !== fn.id)
-      .reduce((sum, t) => sum + calcTurretCost(t), 0);
+      .reduce((sum, t) => sum + calcTurretCost(t, state.relics), 0);
 
     for (const bt of boundTurrets) {
       const reParsed = bt.blocks && bt.blocks.some((b) => b.type === 'call_fn')
@@ -1453,7 +1784,7 @@ function saveFunctionFromPython(state, pythonCode, existingId = null) {
         return { ok: false, error: `套用此函式的 ${bt.id} 發生錯誤：${reParsed.error}` };
       }
       const btSan = sanitizeTurretConfig(reParsed, bt);
-      const btCost = calcTurretCost({ ...btSan, active: true, boundFunctionId: fn.id });
+      const btCost = calcTurretCost({ ...btSan, active: true, boundFunctionId: fn.id }, state.relics);
       totalProjectedCost += btCost;
       pendingUpdates.push({ turret: bt, cfg: btSan, cost: btCost });
     }
@@ -1561,10 +1892,10 @@ function updateTurretConfig(state, turretId, rawConfig, options = {}) {
     ...sanitized,
     active: true,
     boundFunctionId: options.keepFunctionBinding ? turret.boundFunctionId : null
-  });
+  }, state.relics);
   const otherCost = state.turrets
     .filter((t) => t.id !== turretId)
-    .reduce((sum, t) => sum + calcTurretCost(t), 0);
+    .reduce((sum, t) => sum + calcTurretCost(t, state.relics), 0);
 
   if (otherCost + newCost > state.computeBudget) {
     return {
@@ -1657,10 +1988,40 @@ function skipWaveDelay(state) {
 }
 
 function serializeGameState(state) {
+  const mapDef = getMapDef(state.mapId);
   return {
     grade: state.grade,
     difficulty: state.difficulty,
     gameMode: state.gameMode || 'classic',
+    mapId: state.mapId || 'classic_s',
+    mapName: state.mapName || mapDef.name,
+    paths: mapDef.paths,
+    tacticalZones: state.tacticalZones || mapDef.tacticalZones || [],
+    hazardZones: (state.hazardZones || []).map((hz) => ({
+      id: hz.id,
+      x: hz.x,
+      y: hz.y,
+      radius: hz.radius,
+      ttl: Number((hz.ttl || 0).toFixed(1)),
+      label: hz.label
+    })),
+    relics: [...(state.relics || [])],
+    pendingRelicChoice: state.pendingRelicChoice
+      ? {
+          id: state.pendingRelicChoice.id,
+          wave: state.pendingRelicChoice.wave,
+          options: state.pendingRelicChoice.options
+        }
+      : null,
+    relicAutoPickTimer: Math.max(0, Math.ceil(state.relicAutoPickTimer || 0)),
+    activeChestQuiz: state.activeChestQuiz
+      ? {
+          id: state.activeChestQuiz.id,
+          question: state.activeChestQuiz.question,
+          options: state.activeChestQuiz.options,
+          picker: state.activeChestQuiz.picker
+        }
+      : null,
     status: state.status,
     endlessMode: state.endlessMode,
     timedMode: Boolean(state.timedMode),
@@ -1740,6 +2101,8 @@ function serializeGameState(state) {
       boundFunctionName: t.boundFunctionName,
       active: Boolean(t.active),
       ammoRemaining: Number.isInteger(t.ammoRemaining) ? t.ammoRemaining : (t.active ? -1 : 0),
+      inHazard: Boolean(t.inHazard),
+      zoneBuffLabel: t.zoneBuffLabel || null,
       lastTargetId: t.lastTargetId,
       lastConditionActive: t.lastConditionActive
     })),
@@ -1752,6 +2115,7 @@ function serializeGameState(state) {
       type: m.type,
       name: m.name,
       tag: m.tag,
+      laneIndex: m.laneIndex || 0,
       x: Math.round(m.x * 10) / 10,
       y: Math.round(m.y * 10) / 10,
       hp: m.hp,
@@ -1763,7 +2127,8 @@ function serializeGameState(state) {
       color: m.color,
       isBoss: m.isBoss,
       progress: Number(m.progress.toFixed(3)),
-      slowed: m.slowTimer > 0
+      slowed: m.slowTimer > 0,
+      stealthed: m.type === 'stealth' && (m.progress || 0) < 0.55 && (m.slowTimer || 0) <= 0
     })),
     projectiles: state.projectiles.map((p) => ({
       id: p.id,
@@ -1779,6 +2144,7 @@ function serializeGameState(state) {
 
 module.exports = {
   TOTAL_PATH_LENGTH,
+  getMapDef,
   getPositionAtDistance,
   sanitizeTurretConfig,
   calcTurretCost,
@@ -1797,6 +2163,8 @@ module.exports = {
   applyFunctionToTurret,
   skipWaveDelay,
   collectPickup,
+  chooseRelic,
+  answerChestQuiz,
   addMapPing,
   spawnBonusGoldSlime,
   checkBountyProgress,

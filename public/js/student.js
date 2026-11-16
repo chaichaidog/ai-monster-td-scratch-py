@@ -40,6 +40,11 @@
   let dismissedBannerId = null;
   let lastGameOverStatus = null;
   let lastSeenWave = null;
+  let autoSelectedSyncTurret = false;
+  let lastRenderedRelicId = null;
+  let lastRenderedChestQuizId = null;
+  let lastRelicsStripKey = '';
+  let lastLeaderboardKey = '';
   const knownAchievements = new Set();
   const knownBounties = new Set();
 
@@ -153,6 +158,16 @@
   const btnGameoverLeave = document.getElementById('btn-gameover-leave');
   const turnHandoffToast = document.getElementById('turn-handoff-toast');
   const toastStack = document.getElementById('toast-stack');
+  const relicsStrip = document.getElementById('relics-strip');
+  const classLeaderboardBar = document.getElementById('class-leaderboard-bar');
+  const relicModal = document.getElementById('relic-modal');
+  const relicModalTimer = document.getElementById('relic-modal-timer');
+  const relicModalTitle = document.getElementById('relic-modal-title');
+  const relicCardsGrid = document.getElementById('relic-cards-grid');
+  const chestQuizModal = document.getElementById('chest-quiz-modal');
+  const chestQuizPicker = document.getElementById('chest-quiz-picker');
+  const chestQuizQuestion = document.getElementById('chest-quiz-question');
+  const chestQuizOptions = document.getElementById('chest-quiz-options');
   const DEFAULT_DOC_TITLE = 'AI 怪物塔防戰 — Scratch 積木 × Python 對照學習';
   let turnHandoffTimer = null;
   let turnFlashTimer = null;
@@ -274,8 +289,19 @@
     const overDmgTax = Math.max(0, cfg.damage - 35) * 1.4;
     const overRateTax = Math.max(0, cfg.fireRate - 2.0) * 18;
     const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
-    const fnDiscount = cfg.boundFunctionId ? 0.85 : 1.0;
+    const hasFnMaster = roomState && roomState.game && Array.isArray(roomState.game.relics)
+      && roomState.game.relics.includes('fn_master');
+    const fnDiscount = cfg.boundFunctionId ? (hasFnMaster ? 0.70 : 0.85) : 1.0;
     return Math.max(4, Math.round(rawCost * fnDiscount));
+  }
+
+  function getMyOwnedTurrets() {
+    if (!roomState || !myPlayerId) return ['T1', 'T2', 'T3', 'T4'];
+    const me = roomState.players.find((p) => p.id === myPlayerId);
+    if (roomState.turnMode === 'sync' && roomState.players.filter((p) => p.connected).length >= 2) {
+      return (me && Array.isArray(me.ownedTurrets)) ? me.ownedTurrets : ['T1', 'T2', 'T3', 'T4'];
+    }
+    return ['T1', 'T2', 'T3', 'T4'];
   }
 
   function getSelectedTurret() {
@@ -283,21 +309,26 @@
     return roomState.game.turrets.find((t) => t.id === selectedTurretId) || roomState.game.turrets[0];
   }
 
-  function isMyTurn() {
+  function isMyTurn(turretId = selectedTurretId) {
     if (!roomState || roomState.phase !== 'playing') return false;
     if (roomState.turnMode === 'solo') return true;
     const connectedCount = roomState.players.filter((p) => p.connected).length;
     if (connectedCount <= 1) return true;
+    if (roomState.turnMode === 'sync') {
+      return getMyOwnedTurrets().includes(turretId);
+    }
     return roomState.activeTurnPlayerId === myPlayerId;
   }
 
   function setGrade(grade) {
-    selectedGrade = grade === 'TEACHER' ? 'TEACHER' : (grade === 'G8' ? 'G8' : 'G7');
+    selectedGrade = grade === 'TEACHER'
+      ? 'TEACHER'
+      : (grade === 'G9' ? 'G9' : (grade === 'G8' ? 'G8' : 'G7'));
     gradeButtons.forEach((btn) => {
-      btn.classList.remove('active-g7', 'active-g8', 'active-teacher');
+      btn.classList.remove('active-g7', 'active-g8', 'active-g9', 'active-teacher');
       if (btn.dataset.grade === selectedGrade) {
         if (selectedGrade === 'TEACHER') btn.classList.add('active-teacher');
-        else btn.classList.add(selectedGrade === 'G7' ? 'active-g7' : 'active-g8');
+        else btn.classList.add(selectedGrade === 'G7' ? 'active-g7' : (selectedGrade === 'G9' ? 'active-g9' : 'active-g8'));
       }
     });
     if (teacherPinGroup) {
@@ -324,7 +355,9 @@
 
   function getMonsterCounterTip(m) {
     if (m.isBoss) return '⚠️ 魔王警報：用「如果＜BOSS＞」集中火力並開大招！';
-    if (m.type === 'splitter') return '👾 會分裂小怪：用「⚡ 連鎖閃電」一次電光！';
+    if (m.type === 'medic') return '💚 醫療修復師：會持續幫周圍敵軍回血！優先用電漿／連鎖集火清除！';
+    if (m.type === 'stealth') return '👻 隱形突襲者：前半段隱身減傷 50%，用「❄️ 冰霜緩速」打中立刻破隱形！';
+    if (m.type === 'splitter') return '🧬 分裂體：單發擊殺會分裂成 2 隻！用「⚡ 連鎖閃電」或「📡 掃描迴圈」可防分裂！';
     if (m.type === 'gold_slime') return `🪙 賞金寶怪：打死直接賺 ${m.coins} 金幣，用「如果＜跑超快＞」攔截！`;
     if (m.shield > 0) return '🛡️ 有能量盾：用「⚡ 連鎖閃電」或「如果＜有護盾＞」快速破盾！';
     if (m.speed >= 90) return '💨 跑得飛快：建議用「❄️ 冰霜緩速彈」凍住減速！';
@@ -564,6 +597,13 @@
     lastGameOverStatus = null;
     lastSeenAutoSaveId = null;
     wasMyTurn = null;
+    autoSelectedSyncTurret = false;
+    lastRenderedRelicId = null;
+    lastRenderedChestQuizId = null;
+    lastRelicsStripKey = '';
+    lastLeaderboardKey = '';
+    if (relicModal) relicModal.classList.add('hidden');
+    if (chestQuizModal) chestQuizModal.classList.add('hidden');
     if (draftSyncTimer) {
       clearTimeout(draftSyncTimer);
       draftSyncTimer = null;
@@ -1510,7 +1550,8 @@
       const moveLabel = cfg.patrolAxis !== 'none'
         ? `巡邏 ${cfg.patrolAxis.toUpperCase()}軸±${cfg.patrolDist}px`
         : `座標 (${cfg.targetX}, ${cfg.targetY})`;
-      const fnTag = cfg.boundFunctionId ? '（函式 85 折!）' : '';
+      const hasFnMaster = Array.isArray(g.relics) && g.relics.includes('fn_master');
+      const fnTag = cfg.boundFunctionId ? (hasFnMaster ? '（函式 7 折!）' : '（函式 85 折!）') : '';
       scratchDiagnostic.textContent = `✅ [${wInfo}]${fnTag} · 位置 ${moveLabel} · 秒傷 ${dps} · 總算力 ${totalProjected}/${g.computeBudget}`;
     }
 
@@ -1627,10 +1668,13 @@
     lobbyRoomTitle.textContent = room.name;
     lobbyCodeBadge.textContent = `房號：${room.code}`;
     lobbyGradeBadge.textContent = room.gradeLabel;
-    lobbyGradeBadge.className = `badge ${room.grade === 'G7' ? 'badge-g7' : 'badge-g8'}`;
+    lobbyGradeBadge.className = `badge badge-${String(room.grade || 'g7').toLowerCase()}`;
+    const mapTag = room.mapId === 'twin_lanes' ? ' · 雙軌夾擊地圖' : '';
     lobbyModeBadge.textContent = room.teacherCoop
-      ? '👩‍🏫 師生雙人同樂 (老師＋學生)'
-      : (room.maxPlayers === 1 ? '單人獨立挑戰 (1 人)' : '兩人輪流合作 (2 人)');
+      ? `👩‍🏫 師生雙人同樂${mapTag}`
+      : (room.maxPlayers === 1
+        ? `單人獨立挑戰${mapTag}`
+        : (room.turnMode === 'sync' ? `⚡ 雙人同步分工 (T1/T2 vs T3/T4)${mapTag}` : `兩人輪流合作${mapTag}`));
 
     lobbyPlayers.innerHTML = '';
     const hasTeacherAlready = room.players.some((pl) => pl.isTeacher);
@@ -1760,8 +1804,10 @@
   }
 
   function renderTurretPills(turrets) {
-    const key = `${selectedTurretId}|` + turrets.map((t) =>
-      `${t.id}:${t.active}:${t.ammoRemaining}:${t.cost}:${t.damage}:${t.fireRate}:${t.weapon}:${t.patrolAxis}:${t.targetX},${t.targetY}`
+    const owned = getMyOwnedTurrets();
+    const isSync = roomState && roomState.turnMode === 'sync' && owned.length < 4;
+    const key = `${selectedTurretId}|${owned.join(',')}|` + turrets.map((t) =>
+      `${t.id}:${t.active}:${t.ammoRemaining}:${t.cost}:${t.damage}:${t.fireRate}:${t.weapon}:${t.patrolAxis}:${t.inHazard}:${t.targetX},${t.targetY}`
     ).join('|');
     if (key === lastTurretPillsKey) return;
     lastTurretPillsKey = key;
@@ -1770,18 +1816,24 @@
     turrets.forEach((t) => {
       const btn = document.createElement('button');
       btn.type = 'button';
+      const mine = !isSync || owned.includes(t.id);
       btn.className = `turret-pill ${t.id === selectedTurretId ? 'selected' : ''}`;
+      if (isSync && !mine) {
+        btn.style.opacity = '0.78';
+        btn.style.borderStyle = 'dashed';
+      }
 
       const top = document.createElement('div');
       top.className = 'turret-pill-title';
       const label = document.createElement('span');
       const wShort = meta && meta.weapons && meta.weapons[t.weapon] ? meta.weapons[t.weapon].short : '雷射';
-      label.textContent = t.active === false ? `${t.id} · 未編寫` : `${t.id} · ${wShort}`;
+      const ownerPrefix = isSync ? (mine ? '🟦' : '🟪隊友·') : '';
+      label.textContent = t.active === false ? `${ownerPrefix}${t.id} · 未編寫` : `${ownerPrefix}${t.id} · ${wShort}`;
       const cost = document.createElement('span');
       cost.className = 'badge badge-cyan';
       cost.style.padding = '1px 6px';
       cost.style.fontSize = '0.72rem';
-      cost.textContent = `⚡${t.cost}`;
+      cost.textContent = t.inHazard ? `☠️⚡${t.cost}` : `⚡${t.cost}`;
       top.appendChild(label);
       top.appendChild(cost);
 
@@ -1935,11 +1987,172 @@
     });
   }
 
+  function renderRelicsAndLeaderboard(room) {
+    const g = room.game;
+    const relicList = Array.isArray(g.relics) ? g.relics : [];
+    const stripKey = `${g.mapName || ''}|${relicList.join(',')}`;
+    if (relicsStrip && stripKey !== lastRelicsStripKey) {
+      lastRelicsStripKey = stripKey;
+      relicsStrip.innerHTML = '';
+      const mapBadge = document.createElement('span');
+      mapBadge.className = 'badge badge-cyan';
+      mapBadge.textContent = `🗺️ ${g.mapName || '雙彎道迷宮'}`;
+      relicsStrip.appendChild(mapBadge);
+      if (relicList.length === 0) {
+        const emptySpan = document.createElement('span');
+        emptySpan.style.color = 'var(--text-muted)';
+        emptySpan.textContent = '✨ 晶片插槽（第 3、6、9 波 3 選 1 解鎖）';
+        relicsStrip.appendChild(emptySpan);
+      } else {
+        const allCards = (meta && Array.isArray(meta.relicCards)) ? meta.relicCards : [];
+        relicList.forEach((rId) => {
+          const info = allCards.find((c) => c.id === rId);
+          const chip = document.createElement('span');
+          chip.className = 'badge badge-amber';
+          chip.title = info ? info.desc : rId;
+          chip.textContent = info ? info.name : rId;
+          relicsStrip.appendChild(chip);
+        });
+      }
+    }
+
+    const lbRows = Array.isArray(room.leaderboard) ? room.leaderboard : [];
+    const lbKey = JSON.stringify(lbRows.map((r) => `${r.code}:${r.wave}:${r.score}`));
+    if (classLeaderboardBar && lbKey !== lastLeaderboardKey) {
+      lastLeaderboardKey = lbKey;
+      classLeaderboardBar.innerHTML = '';
+      if (lbRows.length <= 1) {
+        classLeaderboardBar.classList.add('hidden');
+      } else {
+        classLeaderboardBar.classList.remove('hidden');
+        const label = document.createElement('span');
+        label.style.color = 'var(--text-muted)';
+        label.textContent = '🏆 各房戰績：';
+        classLeaderboardBar.appendChild(label);
+        lbRows.slice(0, 5).forEach((row, idx) => {
+          const pill = document.createElement('span');
+          pill.className = `lb-pill ${row.code === room.code ? 'is-me' : ''}`;
+          pill.textContent = `#${idx + 1} [${row.gradeShort}] ${row.code} · 波${row.wave} · ${row.score}分`;
+          classLeaderboardBar.appendChild(pill);
+        });
+      }
+    }
+  }
+
+  function renderInteractiveModals(g) {
+    if (relicModal) {
+      const pending = g.pendingRelicChoice;
+      if (pending && Array.isArray(pending.options) && pending.options.length > 0 && g.status === 'playing') {
+        relicModal.classList.remove('hidden');
+        if (relicModalTitle) {
+          relicModalTitle.textContent = `⚡ 第 ${pending.wave} 波戰術晶片 3 選 1！`;
+        }
+        if (relicModalTimer) {
+          relicModalTimer.textContent = `⏱️ ${g.relicAutoPickTimer || 20} 秒後自動選取（戰場已暫停，全隊皆可點擊）`;
+        }
+        if (lastRenderedRelicId !== pending.id && relicCardsGrid) {
+          lastRenderedRelicId = pending.id;
+          relicCardsGrid.innerHTML = '';
+          pending.options.forEach((opt) => {
+            const card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'relic-card';
+            const titleEl = document.createElement('div');
+            titleEl.style.fontWeight = '900';
+            titleEl.style.fontSize = '1.05rem';
+            titleEl.style.color = '#fde047';
+            titleEl.textContent = opt.name;
+            const descEl = document.createElement('div');
+            descEl.style.fontSize = '0.86rem';
+            descEl.style.color = '#e2e8f0';
+            descEl.style.marginTop = '6px';
+            descEl.style.lineHeight = '1.45';
+            descEl.textContent = opt.desc;
+            const tagEl = document.createElement('div');
+            tagEl.style.fontSize = '0.75rem';
+            tagEl.style.color = '#38bdf8';
+            tagEl.style.marginTop = '8px';
+            tagEl.textContent = `👉 ${opt.badge || opt.tag || '永久強化'}`;
+            card.appendChild(titleEl);
+            card.appendChild(descEl);
+            card.appendChild(tagEl);
+            card.addEventListener('click', () => {
+              sound.ensureContext();
+              socket.emit('student:pick_relic', { relicId: opt.id }, (res) => {
+                if (res && !res.ok && res.error) showToast(res.error);
+              });
+            });
+            relicCardsGrid.appendChild(card);
+          });
+        }
+      } else {
+        relicModal.classList.add('hidden');
+        lastRenderedRelicId = null;
+      }
+    }
+
+    if (chestQuizModal) {
+      const quiz = g.activeChestQuiz;
+      if (quiz && g.status === 'playing') {
+        chestQuizModal.classList.remove('hidden');
+        if (lastRenderedChestQuizId !== quiz.id) {
+          lastRenderedChestQuizId = quiz.id;
+          if (chestQuizPicker) {
+            chestQuizPicker.textContent = `🔓 「${quiz.picker || '隊友'}」開啟了密碼寶箱！選對全隊 +15 🪙 ＆ +4 永久算力！`;
+          }
+          if (chestQuizQuestion) {
+            chestQuizQuestion.textContent = quiz.question;
+          }
+          if (chestQuizOptions) {
+            chestQuizOptions.innerHTML = '';
+            (quiz.options || []).forEach((optText, idx) => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'chest-opt-btn';
+              btn.textContent = `${['A', 'B', 'C'][idx] || idx + 1}. ${optText}`;
+              btn.addEventListener('click', () => {
+                sound.ensureContext();
+                socket.emit('student:answer_chest', { choiceIndex: idx }, (res) => {
+                  if (!res || !res.ok) {
+                    showToast((res && res.error) || '送出答案失敗');
+                    return;
+                  }
+                  showToast(res.message || (res.correct ? '🎉 答對了！+15🪙 +4算力！' : '💡 獲得鼓勵獎勵 +4🪙！'), 4800);
+                });
+              });
+              chestQuizOptions.appendChild(btn);
+            });
+          }
+        }
+      } else {
+        chestQuizModal.classList.add('hidden');
+        lastRenderedChestQuizId = null;
+      }
+    }
+  }
+
   function renderGame(room) {
     showView('game');
     ensureRenderer();
 
     const g = room.game;
+    const owned = getMyOwnedTurrets();
+    const multiConnected = room.players.filter((p) => p.connected).length >= 2;
+    if (room.turnMode === 'sync' && multiConnected && !autoSelectedSyncTurret) {
+      autoSelectedSyncTurret = true;
+      if (!owned.includes(selectedTurretId) && owned.length > 0) {
+        selectedTurretId = owned[0];
+        lastRenderedBlocksKey = '';
+      }
+    }
+    if (renderer) {
+      if (typeof renderer.setSelectedTurret === 'function') {
+        renderer.setSelectedTurret(selectedTurretId);
+      }
+      if (typeof renderer.setOwnedTurrets === 'function') {
+        renderer.setOwnedTurrets(room.turnMode === 'sync' && multiConnected ? owned : null);
+      }
+    }
     renderer.pushGameState(g);
 
     if (lastSeenWave !== null && g.wave !== lastSeenWave) {
@@ -1979,7 +2192,7 @@
 
     hudRoomBadge.textContent = `房號 ${room.code}`;
     hudGradeBadge.textContent = room.gradeShort;
-    hudGradeBadge.className = `badge ${room.grade === 'G7' ? 'badge-g7' : 'badge-g8'}`;
+    hudGradeBadge.className = `badge badge-${String(room.grade || 'g7').toLowerCase()}`;
     if (g.timedMode) {
       const rem = Math.max(0, Math.round(g.timeRemaining || 0));
       const mm = String(Math.floor(rem / 60)).padStart(2, '0');
@@ -2026,21 +2239,23 @@
       }
     }
 
+    renderRelicsAndLeaderboard(room);
+    renderInteractiveModals(g);
+
     const myTurn = isMyTurn();
+    const mePlayer = room.players.find((p) => p.id === myPlayerId);
+    const partnerPlayer = room.players.find((p) => p.id !== myPlayerId);
+
     if (wasMyTurn === true && !myTurn && dirtyDraft) {
       flushWorkspaceInputs();
       persistDraftProgress(selectedTurretId, workspaceBlocks, true);
     }
     wasMyTurn = myTurn;
 
-    const mePlayer = room.players.find((p) => p.id === myPlayerId);
-    const partnerPlayer = room.players.find((p) => p.id !== myPlayerId);
-
     if (room.turnMode === 'turn' && room.activeTurnPlayerId !== lastActiveTurnId) {
       const prevTurnId = lastActiveTurnId;
       lastActiveTurnId = room.activeTurnPlayerId;
       if (prevTurnId !== null) sound.playTurnSwitch();
-      const multiConnected = room.players.filter((p) => p.connected).length >= 2;
       if (myTurn && multiConnected && g.status === 'playing') {
         if (prevTurnId === null) {
           triggerMyTurnReminder(
@@ -2075,6 +2290,15 @@
       turnBanner.className = 'turn-banner solo-mode';
       turnTitle.textContent = '🧑‍💻 單人 Scratch 戰術台 — 拖拉積木＋對照學 Python';
       turnSubtitle.textContent = '從積木區拉「移動、切換武器、變數、如果、迴圈、函式」進工作區，隨時按暫停思考！';
+      turnTimerPill.classList.add('hidden');
+      btnEndTurn.classList.add('hidden');
+      teammateTipsBar.classList.add('hidden');
+    } else if (room.turnMode === 'sync') {
+      turnBanner.className = myTurn ? 'turn-banner my-turn' : 'turn-banner partner-turn';
+      turnTitle.textContent = `⚡ 雙人同步分工聯防！你操盤 ${owned.join(' / ')} 砲塔（隨時可同時改！）`;
+      turnSubtitle.textContent = multiConnected
+        ? `你負責 ${owned.join(' / ')}，隊友「${partnerPlayer ? partnerPlayer.nickname : '夥伴'}」即時操盤另一側！共用場上金幣＆戰術晶片。`
+        : '隊友尚未連線，你目前可先同時編輯全部 4 座砲塔；隊友進場後將自動分區！';
       turnTimerPill.classList.add('hidden');
       btnEndTurn.classList.add('hidden');
       teammateTipsBar.classList.add('hidden');
@@ -2146,10 +2370,12 @@
     }
 
     btnDeployTurret.disabled = !canEdit;
-    btnSaveFn.disabled = !canEdit;
+    btnSaveFn.disabled = !(g.status === 'playing' && (myTurn || room.turnMode === 'sync'));
     btnDeployTurret.textContent = myTurn
       ? '🚀 套用這組 Scratch 積木到砲塔'
-      : `⏳ 等待 ${room.activeTurnNickname || '隊友'} 回合結束...`;
+      : (room.turnMode === 'sync'
+        ? `🟪 ${currentTurret.id} 由隊友操控！請點選你的 ${owned.join('/')} 砲塔`
+        : `⏳ 等待 ${room.activeTurnNickname || '隊友'} 回合結束...`);
 
     renderFunctionList(g.functions, currentTurret, canEdit);
 

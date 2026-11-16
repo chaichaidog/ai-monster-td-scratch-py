@@ -63,9 +63,12 @@
       <section class="card">
         <h2 style="margin: 0 0 8px; font-size: 1.2rem;">⚡ 快速教學開房</h2>
         <p style="font-size: 0.88rem; color: var(--text-muted); margin-top: 0;">
-          針對「兩位國一 + 一位國二、不能跨年級共同玩」的班級配置，可依情況一鍵開好兩間獨立房間（含老師陪國二生雙人同樂模式）：
+          支援「國一 vs 國二/國三不混房」，並支援 <strong>8-9 年級跨年級聯防</strong>與<strong>老師陪玩雙人模式</strong>：
         </p>
-        <button id="btn-quick-setup-coop" class="btn btn-primary btn-lg" type="button" style="width: 100%; margin-bottom: 10px;">
+        <button id="btn-quick-setup-89" class="btn btn-primary btn-lg" type="button" style="width: 100%; margin-bottom: 10px;">
+          🚀 一鍵開「國一雙人房 + 8-9年級(國二/國三)同步雙線房」
+        </button>
+        <button id="btn-quick-setup-coop" class="btn btn-amber" type="button" style="width: 100%; margin-bottom: 8px;">
           👩‍🏫 一鍵開「老師陪國二生玩」：國一雙人房 + 國二師生同樂房
         </button>
         <button id="btn-quick-setup" class="btn btn-emerald" type="button" style="width: 100%; margin-bottom: 14px;">
@@ -78,7 +81,7 @@
             <p id="stat-g7-count" style="font-size: 1.1rem; font-weight: 800; color: var(--text-main);">0 間房</p>
           </div>
           <div class="concept-mini">
-            <h4 style="color: var(--g8-accent);">🟣 國二防線</h4>
+            <h4 style="color: var(--g8-accent);">🟣🔵 國二 / 國三防線</h4>
             <p id="stat-g8-count" style="font-size: 1.1rem; font-weight: 800; color: var(--text-main);">0 間房</p>
           </div>
         </div>
@@ -104,13 +107,16 @@
               <label class="form-label" for="create-grade">年級隔離限制</label>
               <select id="create-grade" class="select">
                 <option value="G7">🟢 國一專屬 (G7)</option>
+                <option value="G89">🟣🔵 8-9年級聯防 (國二+國三)</option>
                 <option value="G8">🟣 國二專屬 (G8)</option>
+                <option value="G9">🔵 國三專屬 (G9)</option>
               </select>
             </div>
             <div class="form-group">
               <label class="form-label" for="create-max-players">遊玩人數模式</label>
               <select id="create-max-players" class="select">
                 <option value="2">👥 兩人輪流合作 (2人)</option>
+                <option value="sync">⚡ 兩人同步分工 (同時各玩2塔!)</option>
                 <option value="teacher_coop">👩‍🏫 師生雙人陪玩（老師＋學生 2人）</option>
                 <option value="1">🧑 單人獨立挑戰 (1人)</option>
               </select>
@@ -124,19 +130,26 @@
             </div>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px;">
+          <div style="display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 12px;">
             <div class="form-group">
               <label class="form-label" for="create-game-mode">關卡時間模式</label>
               <select id="create-game-mode" class="select">
-                <option value="timed20">♾️ 20分鐘無限挑戰（無波數上限，約20分出最終BOSS結束）</option>
-                <option value="classic">🎯 經典 8 波制（破關後進20分鐘無限挑戰）</option>
+                <option value="timed20">♾️ 20分鐘無限挑戰</option>
+                <option value="classic">🎯 經典 8 波制</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label" for="create-turn-duration">雙人思考回合時間</label>
+              <label class="form-label" for="create-map-id">戰場地圖＆機關格</label>
+              <select id="create-map-id" class="select">
+                <option value="classic_s">🗺️ 雙彎道迷宮（標準）</option>
+                <option value="twin_lanes">⚔️ 雙軌夾擊峽谷（高難雙路）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create-turn-duration">輪流模式思考秒數</label>
               <select id="create-turn-duration" class="select">
-                <option value="45">45 秒（預設，時間到自動存檔）</option>
-                <option value="60" selected>60 秒（推薦充裕思考＆教學時間）</option>
+                <option value="45">45 秒（預設自動存檔）</option>
+                <option value="60" selected>60 秒（推薦充裕思考）</option>
                 <option value="90">90 秒（超長思考時間）</option>
                 <option value="30">30 秒（快節奏）</option>
               </select>
@@ -160,8 +173,8 @@
 
       <section class="grade-column g8">
         <div style="display: flex; justify-content: space-between; align-items: center;">
-          <h3 style="margin: 0; color: #c4b5fd;">🟣 國二教室防線（不可與國一混房）</h3>
-          <span class="badge badge-g8">G8 專屬區</span>
+          <h3 style="margin: 0; color: #c4b5fd;">🟣🔵 國二 / 國三教室防線（不可與國一混房）</h3>
+          <span class="badge badge-g89">G8 / G9 區</span>
         </div>
         <div id="rooms-g8"></div>
       </section>

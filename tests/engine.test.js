@@ -697,4 +697,263 @@ test('Timed 20-min endless mode (unlimited waves -> final boss finish), auto-sav
   }
 });
 
+test('G89 co-op & G9 isolation, twin_lanes map, sync ownership, relics, mechanic monsters, and Python chest quizzes', () => {
+  const Engine = require('../game/engine');
+  const { RoomManager } = require('../game/roomManager');
+  const { MONSTER_TYPES } = require('../game/constants');
+
+  // 1. G89 allows G8 + G9 co-op while strictly blocking G7; G9 strictly blocks G8 + G7
+  const rm = new RoomManager();
+  const setup = rm.createClass89Setup();
+  assert.equal(setup.ok, true);
+  const g89Room = setup.rooms.find((r) => r.grade === 'G89');
+  assert.ok(g89Room);
+  assert.equal(g89Room.mapId, 'twin_lanes');
+  assert.equal(g89Room.turnMode, 'sync');
+
+  const rejectG7 = rm.joinRoom({ code: g89Room.code, nickname: '小一', grade: 'G7', socketId: 'sg7' });
+  assert.equal(rejectG7.ok, false);
+  assert.equal(rejectG7.code, 'GRADE_MISMATCH');
+
+  const joinG8 = rm.joinRoom({ code: g89Room.code, nickname: '小二', grade: 'G8', socketId: 'sg8' });
+  const joinG9 = rm.joinRoom({ code: g89Room.code, nickname: '小三', grade: 'G9', socketId: 'sg9' });
+  assert.equal(joinG8.ok, true);
+  assert.equal(joinG9.ok, true);
+  assert.deepEqual(rm.getOwnedTurretsForPlayer(g89Room, joinG8.player), ['T1', 'T2']);
+  assert.deepEqual(rm.getOwnedTurretsForPlayer(g89Room, joinG9.player), ['T3', 'T4']);
+
+  rm.setPlayerReady(g89Room.code, joinG8.player.id, true);
+  rm.setPlayerReady(g89Room.code, joinG9.player.id, true);
+  assert.equal(g89Room.phase, 'playing');
+
+  // Simultaneous editing in sync mode respects T1/T2 vs T3/T4 ownership
+  const g8EditT1 = rm.handleUpdateTurret(g89Room.code, joinG8.player.id, 'T1', {
+    blocks: [{ id: 'b1', type: 'loop', loopMode: 'burst', count: 2 }]
+  });
+  const g9EditT3 = rm.handleUpdateTurret(g89Room.code, joinG9.player.id, 'T3', {
+    blocks: [{ id: 'b3', type: 'loop', loopMode: 'burst', count: 2 }]
+  });
+  const g8EditT3Blocked = rm.handleUpdateTurret(g89Room.code, joinG8.player.id, 'T3', {
+    blocks: [{ id: 'bx', type: 'loop', loopMode: 'burst', count: 2 }]
+  });
+  assert.equal(g8EditT1.ok, true);
+  assert.equal(g9EditT3.ok, true);
+  assert.equal(g8EditT3Blocked.ok, false);
+
+  const g9Solo = rm.createRoom({ code: '301', grade: 'G9', maxPlayers: 1 }).room;
+  assert.equal(rm.joinRoom({ code: '301', nickname: '阿凱', grade: 'G8', socketId: 'sbad' }).ok, false);
+  assert.equal(rm.joinRoom({ code: '301', nickname: '小三強', grade: 'G9', socketId: 'sok' }).ok, true);
+  assert.ok(rm.getClassroomLeaderboard().length >= 3);
+
+  // 2. Twin lanes map, Wave 3 Relic 3-pick + fn_master 70% discount
+  const gs = Engine.createGameState({ grade: 'G89', mapId: 'twin_lanes', maxWaves: 8 });
+  assert.equal(gs.paths === undefined ? Engine.getMapDef('twin_lanes').paths.length : 0, 2);
+  const ser = Engine.serializeGameState(gs);
+  assert.equal(ser.paths.length, 2);
+  assert.ok(ser.tacticalZones.length >= 2);
+
+  // Save a bound function then pick fn_master relic -> turret cost drops from 85% to 70%
+  const fnRes = Engine.saveFunctionFromBlocks(gs, {
+    name: 'dual_shot',
+    blocks: [
+      { id: 'fw', type: 'set_weapon', weapon: 'chain' },
+      { id: 'fd', type: 'set_var', varName: 'damage', op: 'set', value: 25 },
+      { id: 'fl', type: 'loop', loopMode: 'burst', count: 2 }
+    ]
+  });
+  assert.equal(fnRes.ok, true);
+  const applyRes = Engine.applyFunctionToTurret(gs, 'T1', fnRes.fn.id);
+  assert.equal(applyRes.ok, true);
+  const costBeforeRelic = applyRes.turret.cost;
+
+  // Clear Wave 2 into Wave 3 to trigger Roguelike 3-pick modal
+  gs.wave = 2;
+  gs.waveDelay = 0;
+  gs.spawnQueue = [];
+  gs.monsters = [];
+  Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.wave, 3);
+  assert.ok(gs.pendingRelicChoice);
+  assert.equal(gs.pendingRelicChoice.options.length, 3);
+
+  // Force fn_master option check via chooseRelic -> recalculates turret cost down
+  const relicRes = Engine.chooseRelic(gs, 'fn_master');
+  assert.equal(relicRes.ok, true);
+  assert.equal(gs.pendingRelicChoice, null);
+  assert.ok(gs.turrets[0].cost < costBeforeRelic, `cost ${gs.turrets[0].cost} should be < ${costBeforeRelic}`);
+
+  // 3. Splitter mitosis (single kill splits into 2; AoE/multi suppresses split), Medic heal, Stealth reveal, Python Chest Quiz
+  gs.turrets.forEach((t) => { t.active = false; });
+  gs.coins = 100;
+  const singleSplitter = {
+    id: 5001,
+    ...MONSTER_TYPES.splitter,
+    maxHp: 50,
+    hp: 10,
+    shield: 0,
+    maxShield: 0,
+    laneIndex: 0,
+    distance: 100,
+    progress: 0.2,
+    x: 200,
+    y: 200,
+    slowTimer: 0
+  };
+  gs.monsters = [singleSplitter];
+  const orbRes = Engine.useCommanderSkill(gs, 'orbital'); // orbital marks AoE -> should NOT split
+  assert.equal(orbRes.ok, true);
+  assert.equal(gs.monsters.length, 0);
+
+  const pSplit = Engine.getPositionAtDistance(100, 'twin_lanes', 0);
+  const nonAoeSplitter = {
+    id: 5003,
+    ...MONSTER_TYPES.splitter,
+    maxHp: 50,
+    hp: 5,
+    shield: 0,
+    maxShield: 0,
+    laneIndex: 0,
+    distance: 100,
+    progress: 0.2,
+    x: pSplit.x,
+    y: pSplit.y,
+    slowTimer: 0,
+    _lastHitWasAoeOrMulti: false
+  };
+  gs.monsters = [nonAoeSplitter];
+  gs.projectiles = [{
+    id: 6001,
+    turretId: 'T1',
+    weapon: 'laser',
+    isMulti: false,
+    x: pSplit.x,
+    y: pSplit.y,
+    targetId: 5003,
+    targetX: pSplit.x,
+    targetY: pSplit.y,
+    speed: 580,
+    damage: 40,
+    hpDmgMult: 1,
+    shieldDmgMult: 1,
+    slowDuration: 0,
+    color: '#38bdf8',
+    condMatched: false
+  }];
+  gs.waveDelay = 1.0;
+  Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.monsters.length, 2, 'Single-target kill on splitter should spawn 2 children');
+
+  // Medic heal pulse & Stealth damage reduction cleared by Frost
+  const pAlly = Engine.getPositionAtDistance(80, 'twin_lanes', 0);
+  const pMedic = Engine.getPositionAtDistance(70, 'twin_lanes', 0);
+  const pStealth = Engine.getPositionAtDistance(60, 'twin_lanes', 0);
+  const injuredAlly = {
+    id: 5010,
+    ...MONSTER_TYPES.fast,
+    maxHp: 100,
+    hp: 40,
+    shield: 0,
+    maxShield: 0,
+    laneIndex: 0,
+    distance: 80,
+    progress: 0.15,
+    x: pAlly.x,
+    y: pAlly.y,
+    slowTimer: 0
+  };
+  const medicMob = {
+    id: 5011,
+    ...MONSTER_TYPES.medic,
+    maxHp: 80,
+    hp: 80,
+    shield: 0,
+    maxShield: 0,
+    laneIndex: 0,
+    distance: 70,
+    progress: 0.12,
+    x: pMedic.x,
+    y: pMedic.y,
+    slowTimer: 0,
+    healTimer: 0.02
+  };
+  const stealthMob = {
+    id: 5012,
+    ...MONSTER_TYPES.stealth,
+    maxHp: 100,
+    hp: 100,
+    shield: 0,
+    maxShield: 0,
+    laneIndex: 0,
+    distance: 60,
+    progress: 0.1,
+    x: pStealth.x,
+    y: pStealth.y,
+    slowTimer: 0
+  };
+  gs.monsters = [injuredAlly, medicMob, stealthMob];
+  gs.projectiles.push({
+    id: 6002,
+    turretId: 'T1',
+    weapon: 'laser',
+    isMulti: false,
+    x: pStealth.x,
+    y: pStealth.y,
+    targetId: 5012,
+    targetX: pStealth.x,
+    targetY: pStealth.y,
+    speed: 580,
+    damage: 40,
+    hpDmgMult: 1,
+    shieldDmgMult: 1,
+    slowDuration: 0,
+    color: '#38bdf8',
+    condMatched: false
+  });
+  Engine.advanceGameTick(gs, 0.05);
+  assert.ok(injuredAlly.hp > 40, `Medic should heal injured ally (hp=${injuredAlly.hp})`);
+  assert.equal(stealthMob.hp, 81, 'Stealthed monster at progress < 0.55 should take 50% dmg (20 - 1 armor = 19 -> hp 81)');
+
+  // Now hit stealthMob with frost -> slows it so stealth cloak breaks for full damage!
+  stealthMob.slowTimer = 2.0;
+  gs.projectiles.push({
+    id: 6003,
+    turretId: 'T1',
+    weapon: 'laser',
+    isMulti: false,
+    x: stealthMob.x,
+    y: stealthMob.y,
+    targetId: 5012,
+    targetX: stealthMob.x,
+    targetY: stealthMob.y,
+    speed: 580,
+    damage: 40,
+    hpDmgMult: 1,
+    shieldDmgMult: 1,
+    slowDuration: 0,
+    color: '#38bdf8',
+    condMatched: false
+  });
+  Engine.advanceGameTick(gs, 0.05);
+  assert.equal(stealthMob.hp, 42, 'Slowed stealth monster should take full damage (40 - 1 armor = 39 -> hp 42)');
+
+  // Python Chest Quiz reward
+  gs.activeChestQuiz = {
+    id: 'q1',
+    question: 'test?',
+    options: ['wrong', 'right', 'wrong2'],
+    correctIndex: 1,
+    explain: 'because!',
+    picker: '小二'
+  };
+  const prevCoins = gs.coins;
+  const prevBudget = gs.computeBudget;
+  const quizRes = Engine.answerChestQuiz(gs, 1, '小二');
+  assert.equal(quizRes.ok, true);
+  assert.equal(quizRes.correct, true);
+  assert.equal(gs.coins, prevCoins + 15);
+  assert.equal(gs.computeBudget, prevBudget + 4);
+  assert.equal(gs.activeChestQuiz, null);
+});
+
+
 

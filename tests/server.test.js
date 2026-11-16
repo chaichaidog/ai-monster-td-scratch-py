@@ -18,6 +18,9 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     const metaData = await metaRes.json();
     assert.equal(metaData.turretSlots.length, 4);
     assert.equal(metaData.waves.length, 8);
+    assert.ok(metaData.maps && metaData.maps.twin_lanes);
+    assert.ok(Array.isArray(metaData.relicCards) && metaData.relicCards.length >= 6);
+    assert.ok(Array.isArray(metaData.pythonChestQuizzes) && metaData.pythonChestQuizzes.length >= 5);
     Object.values(metaData.skills).forEach((s) => {
       assert.equal(s.cooldown, 15);
     });
@@ -26,8 +29,11 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.equal(homeRes.status, 200);
     const homeHtml = await homeRes.text();
     assert.ok(homeHtml.includes('AI 怪物塔防戰'));
+    assert.ok(homeHtml.includes('data-grade="G9"'));
     assert.ok(homeHtml.includes('data-grade="TEACHER"'));
     assert.ok(homeHtml.includes('input-teacher-pin'));
+    assert.ok(homeHtml.includes('relic-modal'));
+    assert.ok(homeHtml.includes('chest-quiz-modal'));
     assert.ok(homeHtml.includes('feedback-form-box'));
     assert.ok(homeHtml.includes('btn-submit-feedback'));
     assert.ok(homeHtml.includes('turn-handoff-toast'));
@@ -36,10 +42,13 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.equal(teacherPageRes.status, 200);
     const teacherHtml = await teacherPageRes.text();
     assert.ok(teacherHtml.includes('老師控制台'));
+    assert.ok(teacherHtml.includes('btn-quick-setup-89'));
     assert.ok(teacherHtml.includes('btn-quick-setup-coop'));
     assert.ok(teacherHtml.includes('spec-btn-coop-join'));
     assert.ok(teacherHtml.includes('teacher-feedback-list'));
     assert.ok(teacherHtml.includes('create-game-mode'));
+    assert.ok(teacherHtml.includes('create-map-id'));
+    assert.ok(teacherHtml.includes('value="G89"'));
 
     const badLogin = await fetch(`${baseUrl}/api/teacher/login`, {
       method: 'POST',

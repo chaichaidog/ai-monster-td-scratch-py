@@ -1,4 +1,4 @@
-const { GRADES, QUICK_TIPS, TIMED_ENDLESS_DURATION_SEC, FEEDBACK_TAGS } = require('./constants');
+const { GRADES, MAPS, QUICK_TIPS, TIMED_ENDLESS_DURATION_SEC, FEEDBACK_TAGS } = require('./constants');
 const ScratchTranspiler = require('../public/js/scratchTranspiler');
 const {
   createGameState,
@@ -14,6 +14,8 @@ const {
   applyFunctionToTurret,
   skipWaveDelay,
   collectPickup,
+  chooseRelic,
+  answerChestQuiz,
   addMapPing,
   spawnBonusGoldSlime,
   serializeGameState
@@ -32,7 +34,7 @@ class RoomManager {
   }
 
   generateRoomCode(grade) {
-    const prefix = grade === 'G8' ? '2' : '1';
+    const prefix = grade === 'G89' ? '8' : (grade === 'G9' ? '3' : (grade === 'G8' ? '2' : '1'));
     for (let num = 1; num <= 99; num++) {
       const candidate = `${prefix}${String(num).padStart(2, '0')}`;
       if (!this.rooms.has(candidate)) return candidate;
@@ -54,13 +56,18 @@ class RoomManager {
     teacherCoop = false,
     gameMode = 'classic',
     timeLimitSeconds = TIMED_ENDLESS_DURATION_SEC,
-    turnDuration = null
+    turnDuration = null,
+    mapId = 'classic_s',
+    coopMode = 'turn'
   } = {}) {
-    const validGrade = grade === 'G8' ? 'G8' : 'G7';
+    const validGrade = GRADES[grade] ? grade : 'G7';
+    const validMapId = MAPS[mapId] ? mapId : 'classic_s';
     const isTeacherCoop = Boolean(teacherCoop);
     const validMaxPlayers = isTeacherCoop ? 2 : (Number(maxPlayers) === 1 ? 1 : 2);
     const validDifficulty = difficulty === 'challenge' ? 'challenge' : 'standard';
     const validGameMode = gameMode === 'timed20' ? 'timed20' : 'classic';
+    const validCoopMode = coopMode === 'sync' ? 'sync' : 'turn';
+    const validTurnMode = validMaxPlayers === 1 ? 'solo' : validCoopMode;
     const defaultTurnSec = isTeacherCoop ? 60 : TURN_DURATION_SECONDS;
     const validTurnSec = turnDuration !== null && turnDuration !== undefined && Number(turnDuration) >= 10
       ? Math.min(300, Math.round(Number(turnDuration)))
@@ -75,21 +82,24 @@ class RoomManager {
       return { ok: false, error: `房號 ${roomCode} 已存在，請換一個房號` };
     }
 
+    const gradeShort = GRADES[validGrade].shortLabel;
     const defaultName = isTeacherCoop
-      ? (validGrade === 'G8' ? '國二師生同樂雙人房' : '國一師生同樂雙人房')
-      : (validGrade === 'G7'
-        ? (validMaxPlayers === 2 ? '國一雙人合作防線' : '國一單人特訓防線')
-        : (validMaxPlayers === 1 ? '國二單人挑戰防線' : '國二雙人進階防線'));
+      ? `${gradeShort}師生同樂雙人房`
+      : (validMaxPlayers === 1
+        ? `${gradeShort}單人特訓防線`
+        : (validTurnMode === 'sync' ? `${gradeShort}同步分工聯防` : `${gradeShort}雙人合作防線`));
 
     const room = {
       code: roomCode,
       name: String(name || defaultName).trim().slice(0, 32),
       grade: validGrade,
+      mapId: validMapId,
       maxPlayers: validMaxPlayers,
       teacherCoop: isTeacherCoop,
       gameMode: validGameMode,
       timeLimitSeconds: validTimeLimit,
-      turnMode: validMaxPlayers === 1 ? 'solo' : 'turn',
+      coopMode: validCoopMode,
+      turnMode: validTurnMode,
       difficulty: validDifficulty,
       maxWaves: Math.max(4, Math.min(8, Number(maxWaves) || 8)),
       phase: 'lobby', // 'lobby' | 'playing'
@@ -103,7 +113,8 @@ class RoomManager {
         maxWaves: Number(maxWaves) || 8,
         difficulty: validDifficulty,
         gameMode: validGameMode,
-        timeLimitSeconds: validTimeLimit
+        timeLimitSeconds: validTimeLimit,
+        mapId: validMapId
       }),
       pendingDrafts: {},
       savedDrafts: {},
@@ -115,9 +126,12 @@ class RoomManager {
     };
 
     this.rooms.set(roomCode, room);
-    const modeNote = isTeacherCoop ? '師生同樂雙人' : (validMaxPlayers === 1 ? '單人' : '雙人輪流');
+    const modeNote = isTeacherCoop
+      ? '師生同樂雙人'
+      : (validMaxPlayers === 1 ? '單人' : (validTurnMode === 'sync' ? '雙人同步分工' : '雙人輪流'));
     const ruleNote = validGameMode === 'timed20' ? ' · 20分鐘無限挑戰' : '';
-    this.logAction(room, '系統', `老師已建立 ${GRADES[validGrade].shortLabel} ${modeNote}${ruleNote}房間 (${roomCode})`);
+    const mapNote = validMapId === 'twin_lanes' ? ' · 雙軌夾擊地圖' : '';
+    this.logAction(room, '系統', `老師已建立 ${gradeShort} ${modeNote}${ruleNote}${mapNote}房間 (${roomCode})`);
     return { ok: true, room };
   }
 
@@ -161,6 +175,31 @@ class RoomManager {
     return {
       ok: g7.ok && g8.ok,
       rooms: [g7.room, g8.room].filter(Boolean)
+    };
+  }
+
+  createClass89Setup() {
+    const g7 = this.createRoom({
+      name: '國一雙人合作戰隊',
+      grade: 'G7',
+      maxPlayers: 2,
+      difficulty: 'standard',
+      gameMode: 'timed20',
+      mapId: 'classic_s',
+      coopMode: 'turn'
+    });
+    const g89 = this.createRoom({
+      name: '國二＆國三 8-9年級雙人聯防戰隊',
+      grade: 'G89',
+      maxPlayers: 2,
+      difficulty: 'challenge',
+      gameMode: 'timed20',
+      mapId: 'twin_lanes',
+      coopMode: 'sync'
+    });
+    return {
+      ok: g7.ok && g89.ok,
+      rooms: [g7.room, g89.room].filter(Boolean)
     };
   }
 
@@ -216,18 +255,20 @@ class RoomManager {
     }
 
     const teacherJoining = Boolean(isTeacher);
-    let cleanGrade = grade === 'G8' ? 'G8' : (grade === 'G7' ? 'G7' : null);
+    const roomGradeDef = GRADES[room.grade] || GRADES.G7;
+    const allowedGrades = roomGradeDef.allowedStudentGrades || [room.grade];
+    let cleanGrade = ['G7', 'G8', 'G9'].includes(grade) ? grade : null;
 
     if (teacherJoining) {
-      cleanGrade = room.grade;
+      cleanGrade = allowedGrades[0] || room.grade;
     } else {
       if (!cleanGrade) {
-        return { ok: false, error: '請先選擇你的年級（國一或國二）' };
+        return { ok: false, error: '請先選擇你的年級（國一、國二或國三）' };
       }
 
-      // Strict Grade Separation Rule for students
-      if (room.grade !== cleanGrade) {
-        const roomGradeLabel = GRADES[room.grade].shortLabel;
+      // Strict Grade Separation Rule for students (G8 & G9 can co-op in G89, never with G7)
+      if (!allowedGrades.includes(cleanGrade)) {
+        const roomGradeLabel = roomGradeDef.shortLabel;
         const studentGradeLabel = GRADES[cleanGrade].shortLabel;
         return {
           ok: false,
@@ -389,7 +430,16 @@ class RoomManager {
     return { ok: true, room };
   }
 
-  canPlayerEdit(room, playerId) {
+  getOwnedTurretsForPlayer(room, player) {
+    if (!room || !player) return ['T1', 'T2', 'T3', 'T4'];
+    const connectedCount = room.players.filter((p) => p.connected).length;
+    if (room.turnMode === 'sync' && connectedCount >= 2) {
+      return player.slotIndex === 1 ? ['T1', 'T2'] : ['T3', 'T4'];
+    }
+    return ['T1', 'T2', 'T3', 'T4'];
+  }
+
+  canPlayerEdit(room, playerId, turretId = null) {
     if (room.phase !== 'playing') {
       return { ok: false, error: '尚未進入戰鬥階段' };
     }
@@ -401,6 +451,18 @@ class RoomManager {
     }
     const connectedCount = room.players.filter((p) => p.connected).length;
     if (connectedCount <= 1) {
+      return { ok: true };
+    }
+    if (room.turnMode === 'sync') {
+      if (!turretId) return { ok: true };
+      const player = room.players.find((p) => p.id === playerId);
+      const owned = this.getOwnedTurretsForPlayer(room, player);
+      if (!owned.includes(turretId)) {
+        return {
+          ok: false,
+          error: `分工合作模式：你負責 ${owned.join(' / ')} 砲塔！${turretId} 目前由隊友即時操控中。`
+        };
+      }
       return { ok: true };
     }
     if (room.activeTurnPlayerId !== playerId) {
@@ -419,7 +481,7 @@ class RoomManager {
     const player = room.players.find((p) => p.id === playerId);
     if (!player) return { ok: false, error: '無效的玩家' };
 
-    const auth = this.canPlayerEdit(room, playerId);
+    const auth = this.canPlayerEdit(room, playerId, turretId);
     if (!auth.ok) return auth;
 
     let res;
@@ -638,7 +700,7 @@ class RoomManager {
     const player = room.players.find((p) => p.id === playerId);
     if (!player) return { ok: false, error: '無效的玩家' };
 
-    const auth = this.canPlayerEdit(room, playerId);
+    const auth = this.canPlayerEdit(room, playerId, turretId);
     if (!auth.ok) return auth;
 
     const res = applyFunctionToTurret(room.game, turretId, functionId);
@@ -721,7 +783,8 @@ class RoomManager {
       maxWaves: room.maxWaves,
       difficulty: room.difficulty,
       gameMode: room.gameMode || 'classic',
-      timeLimitSeconds: room.timeLimitSeconds || TIMED_ENDLESS_DURATION_SEC
+      timeLimitSeconds: room.timeLimitSeconds || TIMED_ENDLESS_DURATION_SEC,
+      mapId: room.mapId || 'classic_s'
     });
     room.pendingDrafts = {};
     room.savedDrafts = {};
@@ -784,6 +847,52 @@ class RoomManager {
     return { ok: true, room };
   }
 
+  handlePickRelic(code, playerId, relicId) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效玩家' };
+    const res = chooseRelic(room.game, relicId);
+    if (!res.ok) return res;
+    this.logAction(room, player.nickname, `選擇戰術晶片「${res.relic.name}」：${res.relic.desc}`);
+    return { ok: true, room, relic: res.relic };
+  }
+
+  handleAnswerChestQuiz(code, playerId, choiceIndex) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效玩家' };
+    const res = answerChestQuiz(room.game, choiceIndex, player.nickname);
+    if (!res.ok) return res;
+    this.logAction(room, player.nickname, res.correct ? '解開 Python 密碼寶箱（+15🪙 / +4算力）' : '嘗試解開 Python 密碼寶箱（差一點，獲得鼓勵 +4🪙）');
+    return { ok: true, room, ...res };
+  }
+
+  getClassroomLeaderboard() {
+    const rows = [];
+    for (const room of this.rooms.values()) {
+      const gradeCfg = GRADES[room.grade] || GRADES.G7;
+      rows.push({
+        code: room.code,
+        name: room.name,
+        grade: room.grade,
+        gradeShort: gradeCfg.shortLabel,
+        mapId: room.mapId || 'classic_s',
+        coopMode: room.coopMode || 'turn',
+        wave: room.game.wave,
+        score: room.game.score,
+        kills: room.game.kills,
+        timedMode: Boolean(room.game.timedMode),
+        status: room.phase === 'playing' ? room.game.status : 'lobby',
+        playerCount: room.players.filter((p) => p.connected).length,
+        playersText: room.players.map((p) => p.nickname).join(' & ') || '待加入'
+      });
+    }
+    rows.sort((a, b) => b.score - a.score || b.wave - a.wave || a.code.localeCompare(b.code));
+    return rows.slice(0, 8);
+  }
+
   tickAll(dt) {
     const updatedRooms = [];
     for (const room of this.rooms.values()) {
@@ -819,12 +928,17 @@ class RoomManager {
 
   serializeRoom(room, includeFullGame = true) {
     const activePlayer = room.players.find((p) => p.id === room.activeTurnPlayerId) || null;
+    const gradeCfg = GRADES[room.grade] || GRADES.G7;
+    const mapCfg = MAPS[room.mapId] || MAPS.classic_s;
     return {
       code: room.code,
       name: room.name,
       grade: room.grade,
-      gradeLabel: GRADES[room.grade].label,
-      gradeShort: GRADES[room.grade].shortLabel,
+      gradeLabel: gradeCfg.label,
+      gradeShort: gradeCfg.shortLabel,
+      mapId: room.mapId || 'classic_s',
+      mapName: mapCfg.name,
+      coopMode: room.coopMode || (room.turnMode === 'sync' ? 'sync' : 'turn'),
       maxPlayers: room.maxPlayers,
       teacherCoop: Boolean(room.teacherCoop),
       gameMode: room.gameMode || 'classic',
@@ -839,6 +953,7 @@ class RoomManager {
         grade: p.grade,
         isTeacher: Boolean(p.isTeacher),
         slotIndex: p.slotIndex,
+        ownedTurrets: this.getOwnedTurretsForPlayer(room, p),
         ready: p.ready,
         connected: p.connected
       })),
@@ -854,6 +969,7 @@ class RoomManager {
       feedbacks: Array.isArray(room.feedbacks) ? room.feedbacks : [],
       actionLog: room.actionLog.slice(0, 20),
       quickTips: QUICK_TIPS,
+      leaderboard: includeFullGame ? this.getClassroomLeaderboard() : undefined,
       game: includeFullGame ? serializeGameState(room.game) : undefined
     };
   }

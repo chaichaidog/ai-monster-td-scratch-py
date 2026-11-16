@@ -200,6 +200,12 @@ button, input, select {
   color: #c4b5fd;
 }
 
+.badge-g9, .badge-g89 {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(96, 165, 250, 0.5);
+  color: #93c5fd;
+}
+
 .badge-cyan {
   background: rgba(56, 189, 248, 0.15);
   border-color: rgba(56, 189, 248, 0.4);
@@ -301,15 +307,21 @@ button, input, select {
 
 .grade-picker {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 600px) {
+  .grade-picker {
+    grid-template-columns: 1fr;
+  }
 }
 
 .grade-option {
   border: 2px solid var(--border);
   background: var(--bg-card);
   border-radius: var(--radius-sm);
-  padding: 12px;
+  padding: 11px 8px;
   text-align: center;
   cursor: pointer;
   transition: all 0.15s ease;
@@ -329,6 +341,12 @@ button, input, select {
   border-color: var(--g8-accent);
   background: rgba(139, 92, 246, 0.16);
   box-shadow: 0 0 18px rgba(139, 92, 246, 0.22);
+}
+
+.grade-option.active-g9 {
+  border-color: #60a5fa;
+  background: rgba(59, 130, 246, 0.18);
+  box-shadow: 0 0 18px rgba(59, 130, 246, 0.24);
 }
 
 .grade-option.teacher-option {
@@ -1548,5 +1566,103 @@ input[type="range"] {
   border: 1px solid var(--border-bright);
   border-radius: 10px;
   padding: 12px;
+}
+
+.status-strip-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.relics-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.78rem;
+  color: #fde68a;
+}
+
+.class-leaderboard-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  font-size: 0.76rem;
+}
+
+.lb-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid var(--border);
+  color: #cbd5e1;
+}
+
+.lb-pill.is-me {
+  border-color: var(--cyan);
+  color: #7dd3fc;
+  font-weight: 700;
+}
+
+.relic-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@media (max-width: 640px) {
+  .relic-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.relic-card {
+  border: 2px solid rgba(251, 191, 36, 0.45);
+  background: rgba(15, 23, 42, 0.92);
+  border-radius: 12px;
+  padding: 14px 12px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text);
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.relic-card:hover {
+  transform: translateY(-3px);
+  border-color: #fde047;
+  box-shadow: 0 8px 24px rgba(250, 204, 21, 0.22);
+}
+
+.chest-options-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chest-opt-btn {
+  border: 1px solid var(--border-bright);
+  background: rgba(30, 41, 59, 0.88);
+  color: #e2e8f0;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.chest-opt-btn:hover {
+  border-color: #e879f9;
+  background: rgba(168, 85, 247, 0.22);
 }
 

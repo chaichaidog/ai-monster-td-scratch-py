@@ -13,6 +13,7 @@ class BattlefieldRenderer {
 
     this.selectedTurretId = options.selectedTurretId || 'T1';
     this.hoveredTurretId = null;
+    this.ownedTurrets = null;
     this.movePickMode = false;
     this.movePickHover = null;
 
@@ -36,6 +37,10 @@ class BattlefieldRenderer {
 
   setSelectedTurret(turretId) {
     this.selectedTurretId = turretId;
+  }
+
+  setOwnedTurrets(turretIds) {
+    this.ownedTurrets = Array.isArray(turretIds) ? turretIds : null;
   }
 
   start() {
@@ -217,6 +222,16 @@ class BattlefieldRenderer {
       });
     } else if (ev.kind === 'wave_clear') {
       if (this.sound) this.sound.playWaveAlert();
+    } else if (ev.kind === 'heal_pulse') {
+      this.rings.push({ x: ev.x, y: ev.y, maxR: ev.radius || 95, color: '#4ade80', life: 0.48, maxLife: 0.48 });
+    } else if (ev.kind === 'splitter_spawn') {
+      this.spawnSparks(ev.x, ev.y, '#f472b6', 12);
+      this.floatingTexts.push({ x: ev.x, y: ev.y - 12, text: '分裂×2!', color: '#f472b6', life: 1.0, maxLife: 1.0 });
+    } else if (ev.kind === 'hazard_spawn') {
+      this.rings.push({ x: ev.x, y: ev.y, maxR: 68, color: '#fb7185', life: 0.65, maxLife: 0.65 });
+      this.floatingTexts.push({ x: ev.x, y: ev.y - 18, text: `☠️ 毒霧干擾 ${ev.turretName || ''}`, color: '#fda4af', life: 1.5, maxLife: 1.5 });
+    } else if (ev.kind === 'relic_picked') {
+      this.floatingTexts.push({ x: this.meta.mapWidth / 2, y: 80, text: `✨ 晶片啟動：${ev.name}`, color: '#fde047', life: 2.2, maxLife: 2.2 });
     } else if (ev.kind === 'game_over') {
       if (this.sound) {
         if (ev.outcome === 'victory') this.sound.playVictory();
@@ -346,37 +361,90 @@ class BattlefieldRenderer {
       ctx.stroke();
     }
 
-    // 2. Monster Path
-    const pts = this.meta.pathWaypoints;
+    // 2. Monster Paths (Supports Single S-Curve & Twin-Lane Maps)
+    const paths = (this.latestGame && Array.isArray(this.latestGame.paths) && this.latestGame.paths.length > 0)
+      ? this.latestGame.paths
+      : [this.meta.pathWaypoints];
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    ctx.strokeStyle = 'rgba(14, 165, 233, 0.14)';
-    ctx.lineWidth = 42;
-    ctx.beginPath();
-    pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-    ctx.stroke();
+    for (const pts of paths) {
+      ctx.strokeStyle = 'rgba(14, 165, 233, 0.14)';
+      ctx.lineWidth = 42;
+      ctx.beginPath();
+      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.stroke();
 
-    ctx.strokeStyle = '#101d35';
-    ctx.lineWidth = 30;
-    ctx.beginPath();
-    pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-    ctx.stroke();
+      ctx.strokeStyle = '#101d35';
+      ctx.lineWidth = 30;
+      ctx.beginPath();
+      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.stroke();
 
-    ctx.save();
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([12, 16]);
-    ctx.lineDashOffset = -this.animTime * 48;
-    ctx.beginPath();
-    pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-    ctx.stroke();
-    ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([12, 16]);
+      ctx.lineDashOffset = -this.animTime * 48;
+      ctx.beginPath();
+      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+      ctx.stroke();
+      ctx.restore();
 
-    this.drawPortal(ctx, pts[0].x, pts[0].y);
-    this.drawBaseCore(ctx, pts[pts.length - 1].x, pts[pts.length - 1].y);
+      this.drawPortal(ctx, pts[0].x, pts[0].y);
+    }
+    const baseLane = paths[0] || this.meta.pathWaypoints;
+    const basePt = baseLane[baseLane.length - 1];
+    this.drawBaseCore(ctx, basePt.x, basePt.y);
 
     if (!this.latestGame) return;
+
+    // 2b. Tactical Buff Zones & Dynamic Electromagnetic Hazard Clouds
+    if (Array.isArray(this.latestGame.tacticalZones)) {
+      for (const z of this.latestGame.tacticalZones) {
+        const isSpeed = z.kind === 'haste' || z.kind === 'attack_speed';
+        const strokeCol = isSpeed ? 'rgba(250, 204, 21, 0.65)' : 'rgba(56, 189, 248, 0.65)';
+        const fillCol = isSpeed ? 'rgba(250, 204, 21, 0.08)' : 'rgba(56, 189, 248, 0.08)';
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(z.x, z.y, z.radius || 46, 0, Math.PI * 2);
+        ctx.fillStyle = fillCol;
+        ctx.fill();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        if (!this.mini) {
+          ctx.fillStyle = isSpeed ? '#fde047' : '#7dd3fc';
+          ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(z.label || (isSpeed ? '⚡攻速+25%' : '🎯射程+45'), z.x, z.y + (z.radius || 46) + 13);
+        }
+        ctx.restore();
+      }
+    }
+
+    if (Array.isArray(this.latestGame.hazardZones)) {
+      for (const hz of this.latestGame.hazardZones) {
+        const pulse = 1 + Math.sin(this.animTime * 5) * 0.05;
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(hz.x, hz.y, (hz.radius || 62) * pulse, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(244, 63, 94, 0.18)';
+        ctx.fill();
+        ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = 'rgba(251, 113, 133, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        if (!this.mini) {
+          ctx.fillStyle = '#fda4af';
+          ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(`☠️ 減速霧 (${hz.ttl}s) 快用移動積木躲!`, hz.x, hz.y + (hz.radius || 62) + 12);
+        }
+        ctx.restore();
+      }
+    }
 
     // 3. Patrol tracks, range rings, targeting lines
     for (const turret of this.latestGame.turrets) {
@@ -514,17 +582,18 @@ class BattlefieldRenderer {
       for (const pk of this.latestGame.pickups) {
         const bob = Math.sin(this.animTime * 4 + pk.id) * 3;
         const isCoin = pk.kind === 'coin';
+        const isChest = pk.kind === 'py_chest';
         ctx.save();
         ctx.translate(pk.x, pk.y + bob);
         ctx.beginPath();
-        ctx.arc(0, 0, 17, 0, Math.PI * 2);
-        ctx.fillStyle = isCoin ? 'rgba(250, 204, 21, 0.2)' : 'rgba(52, 211, 153, 0.2)';
+        ctx.arc(0, 0, isChest ? 20 : 17, 0, Math.PI * 2);
+        ctx.fillStyle = isChest ? 'rgba(192, 132, 252, 0.28)' : (isCoin ? 'rgba(250, 204, 21, 0.2)' : 'rgba(52, 211, 153, 0.2)');
         ctx.fill();
-        ctx.strokeStyle = isCoin ? '#fde047' : '#34d399';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = isChest ? '#e879f9' : (isCoin ? '#fde047' : '#34d399');
+        ctx.lineWidth = isChest ? 2.6 : 2;
         ctx.stroke();
         if (!this.mini) {
-          ctx.fillStyle = isCoin ? '#fef08a' : '#a7f3d0';
+          ctx.fillStyle = isChest ? '#f5d0fe' : (isCoin ? '#fef08a' : '#a7f3d0');
           ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
           ctx.textAlign = 'center';
           ctx.fillText(pk.label, 0, 4);
@@ -784,10 +853,23 @@ class BattlefieldRenderer {
     ctx.restore();
 
     if (!this.mini) {
-      ctx.fillStyle = '#e2e8f0';
+      const ownerTag = (Array.isArray(this.ownedTurrets) && this.ownedTurrets.length < 4)
+        ? (this.ownedTurrets.includes(t.id) ? ' (你)' : ' (隊友)')
+        : '';
+      ctx.fillStyle = (Array.isArray(this.ownedTurrets) && !this.ownedTurrets.includes(t.id)) ? '#c084fc' : '#e2e8f0';
       ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(t.id, 0, 35);
+      ctx.fillText(`${t.id}${ownerTag}`, 0, 35);
+
+      if (t.inHazard) {
+        ctx.fillStyle = '#fb7185';
+        ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+        ctx.fillText('☠️ 減速霧中', 0, 47);
+      } else if (t.zoneBuffLabel) {
+        ctx.fillStyle = '#fde047';
+        ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+        ctx.fillText(t.zoneBuffLabel, 0, 47);
+      }
 
       if (isDormant) {
         ctx.fillStyle = '#94a3b8';
@@ -817,6 +899,9 @@ class BattlefieldRenderer {
   drawMonster(ctx, x, y, m) {
     ctx.save();
     ctx.translate(x, y);
+    if (m.stealthed) {
+      ctx.globalAlpha = 0.4;
+    }
 
     if (m.type === 'gold_slime') {
       ctx.beginPath();
@@ -824,6 +909,14 @@ class BattlefieldRenderer {
       ctx.strokeStyle = 'rgba(253, 224, 71, 0.75)';
       ctx.lineWidth = 2;
       ctx.stroke();
+    } else if (m.type === 'medic') {
+      ctx.beginPath();
+      ctx.arc(0, 0, m.radius + 7 + Math.sin(this.animTime * 4) * 2, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(74, 222, 128, 0.55)';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     if (m.shield > 0) {
@@ -853,7 +946,7 @@ class BattlefieldRenderer {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-    } else if (m.type === 'swarm' || m.type === 'phantom') {
+    } else if (m.type === 'swarm' || m.type === 'phantom' || m.type === 'splitter' || m.type === 'stealth') {
       ctx.beginPath();
       ctx.moveTo(m.radius, 0);
       ctx.lineTo(-m.radius * 0.85, -m.radius * 0.85);
@@ -869,11 +962,17 @@ class BattlefieldRenderer {
       ctx.stroke();
     }
 
-    ctx.fillStyle = '#0f172a';
-    ctx.beginPath();
-    ctx.arc(-m.radius * 0.28, -2, 2.2, 0, Math.PI * 2);
-    ctx.arc(m.radius * 0.28, -2, 2.2, 0, Math.PI * 2);
-    ctx.fill();
+    if (m.type === 'medic') {
+      ctx.fillStyle = '#dcfce7';
+      ctx.fillRect(-5, -1.8, 10, 3.6);
+      ctx.fillRect(-1.8, -5, 3.6, 10);
+    } else {
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(-m.radius * 0.28, -2, 2.2, 0, Math.PI * 2);
+      ctx.arc(m.radius * 0.28, -2, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const bw = Math.max(26, m.radius * 2);
     const topY = -m.radius - 12;
@@ -888,11 +987,14 @@ class BattlefieldRenderer {
       ctx.fillRect(-bw / 2, topY - 4, bw * Math.max(0, m.shield / m.maxShield), 3);
     }
 
-    if (!this.mini && (m.isBoss || m.type === 'gold_slime')) {
-      ctx.fillStyle = m.type === 'gold_slime' ? '#fde047' : '#fda4af';
-      ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
+    if (!this.mini && (m.isBoss || m.type === 'gold_slime' || m.type === 'splitter' || m.type === 'medic' || m.stealthed)) {
+      ctx.fillStyle = m.type === 'gold_slime' ? '#fde047' : (m.type === 'medic' ? '#86efac' : (m.stealthed ? '#cbd5e1' : '#fda4af'));
+      ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(m.type === 'gold_slime' ? '💰 黃金怪' : m.name, 0, topY - 8);
+      const label = m.type === 'gold_slime'
+        ? '💰 黃金怪'
+        : (m.type === 'splitter' ? '🧬 分裂' : (m.type === 'medic' ? '💚 醫療' : (m.stealthed ? '👻 隱形減傷' : m.name)));
+      ctx.fillText(label, 0, topY - 8);
     }
 
     ctx.restore();

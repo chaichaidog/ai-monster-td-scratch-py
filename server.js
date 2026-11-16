@@ -59,7 +59,10 @@ app.get('/api/meta', (_req, res) => {
     pythonBounties: constants.PYTHON_BOUNTIES,
     gameModes: constants.GAME_MODES,
     timedEndlessDurationSec: constants.TIMED_ENDLESS_DURATION_SEC,
-    feedbackTags: constants.FEEDBACK_TAGS
+    feedbackTags: constants.FEEDBACK_TAGS,
+    maps: constants.MAPS,
+    relicCards: constants.RELIC_CARDS,
+    pythonChestQuizzes: constants.PYTHON_CHEST_QUIZZES
   });
 });
 
@@ -153,6 +156,21 @@ io.on('connection', (socket) => {
       return;
     }
     const res = roomManager.createTeacherCoopClassSetup();
+    broadcastTeacherDashboard();
+    if (typeof ack === 'function') {
+      ack({
+        ok: res.ok,
+        rooms: res.rooms.map((r) => roomManager.serializeRoom(r, false))
+      });
+    }
+  });
+
+  socket.on('teacher:create_89_setup', (_payload, ack) => {
+    if (socket.data.role !== 'teacher') {
+      if (typeof ack === 'function') ack({ ok: false, error: '未授權的教師操作' });
+      return;
+    }
+    const res = roomManager.createClass89Setup();
     broadcastTeacherDashboard();
     if (typeof ack === 'function') {
       ack({
@@ -483,6 +501,34 @@ io.on('connection', (socket) => {
       broadcastTeacherDashboard();
     }
     if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
+  });
+
+  socket.on('student:pick_relic', ({ relicId } = {}, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.handlePickRelic(socket.data.roomCode, socket.data.playerId, relicId);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, relic: res.relic, error: res.error });
+  });
+
+  socket.on('student:answer_chest', ({ choiceIndex } = {}, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.handleAnswerChestQuiz(socket.data.roomCode, socket.data.playerId, choiceIndex);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') {
+      ack({
+        ok: res.ok,
+        correct: res.correct,
+        explain: res.explain,
+        message: res.message,
+        error: res.error
+      });
+    }
   });
 
   socket.on('student:map_ping', ({ x, y, label } = {}, ack) => {

@@ -16,6 +16,7 @@
   const loginError = document.getElementById('teacher-login-error');
   const btnLogout = document.getElementById('btn-teacher-logout');
 
+  const btnQuickSetup89 = document.getElementById('btn-quick-setup-89');
   const btnQuickSetupCoop = document.getElementById('btn-quick-setup-coop');
   const btnQuickSetup = document.getElementById('btn-quick-setup');
   const createRoomForm = document.getElementById('create-room-form');
@@ -25,6 +26,7 @@
   const createMaxPlayers = document.getElementById('create-max-players');
   const createDifficulty = document.getElementById('create-difficulty');
   const createGameMode = document.getElementById('create-game-mode');
+  const createMapId = document.getElementById('create-map-id');
   const createTurnDuration = document.getElementById('create-turn-duration');
 
   const statG7Count = document.getElementById('stat-g7-count');
@@ -150,6 +152,19 @@
     });
   }
 
+  if (btnQuickSetup89) {
+    btnQuickSetup89.addEventListener('click', () => {
+      socket.emit('teacher:create_89_setup', {}, (res) => {
+        if (res && res.ok) {
+          const codes = res.rooms.map((r) => `${r.gradeShort}:${r.code}`).join(' / ');
+          showToast(`🚀 已建好「國一房 + 8-9年級同步雙線聯防房」（${codes}）！`);
+        } else {
+          showToast((res && res.error) || '建立失敗');
+        }
+      });
+    });
+  }
+
   if (btnQuickSetupCoop) {
     btnQuickSetupCoop.addEventListener('click', () => {
       socket.emit('teacher:create_teacher_coop_setup', {}, (res) => {
@@ -178,10 +193,14 @@
 
   createGrade.addEventListener('change', () => {
     if (createMaxPlayers.value === 'teacher_coop') return;
-    // Helpful default suggestion: G7 -> 2 players, G8 -> 1 player
     if (createGrade.value === 'G7') {
       createMaxPlayers.value = '2';
       createDifficulty.value = 'standard';
+      if (createMapId) createMapId.value = 'classic_s';
+    } else if (createGrade.value === 'G89') {
+      createMaxPlayers.value = 'sync';
+      createDifficulty.value = 'challenge';
+      if (createMapId) createMapId.value = 'twin_lanes';
     } else {
       createMaxPlayers.value = '1';
       createDifficulty.value = 'challenge';
@@ -191,14 +210,17 @@
   createRoomForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const isTeacherCoop = createMaxPlayers.value === 'teacher_coop';
+    const isSync = createMaxPlayers.value === 'sync';
     socket.emit(
       'teacher:create_room',
       {
         name: createName.value.trim(),
         code: createCode.value.trim(),
         grade: createGrade.value,
-        maxPlayers: isTeacherCoop ? 2 : Number(createMaxPlayers.value),
+        maxPlayers: (isTeacherCoop || isSync) ? 2 : Number(createMaxPlayers.value),
         teacherCoop: isTeacherCoop,
+        coopMode: isSync ? 'sync' : 'turn',
+        mapId: createMapId ? createMapId.value : 'classic_s',
         difficulty: createDifficulty.value,
         gameMode: createGameMode ? createGameMode.value : 'timed20',
         turnDuration: createTurnDuration ? Number(createTurnDuration.value) : 60
@@ -284,7 +306,8 @@
       btnCopyUrl.className = 'btn btn-sm';
       btnCopyUrl.textContent = '複製學生連結';
       btnCopyUrl.addEventListener('click', () => {
-        const url = `${window.location.origin}/?room=${encodeURIComponent(room.code)}&grade=${encodeURIComponent(room.grade)}`;
+        const gradeParam = room.grade === 'G89' ? '' : `&grade=${encodeURIComponent(room.grade)}`;
+        const url = `${window.location.origin}/?room=${encodeURIComponent(room.code)}${gradeParam}`;
         copyText(url, `已複製 ${room.gradeShort} 專屬學生加入連結！`);
       });
 
@@ -408,9 +431,11 @@
     entry.metaRow.innerHTML = '';
     const modeLabel = room.teacherCoop
       ? '👩‍🏫 師生同樂'
-      : (room.maxPlayers === 1 ? '🧑 單人模式' : '👥 兩人輪流');
+      : (room.maxPlayers === 1 ? '🧑 單人模式' : (room.turnMode === 'sync' ? '⚡ 同步分工' : '👥 兩人輪流'));
     const badges = [
+      [room.gradeShort, `badge badge-${String(room.grade || 'g7').toLowerCase()}`],
       [modeLabel, room.teacherCoop ? 'badge badge-g8' : 'badge'],
+      [`🗺️ ${room.mapName || '雙彎道'}`, 'badge'],
       [statusLabel(room), 'badge badge-cyan'],
       [`🛡️ HP ${room.game.baseHp}`, 'badge'],
       [`🏆 ${room.game.score} 分`, 'badge badge-amber']
@@ -467,7 +492,7 @@
   function renderDashboard(rooms) {
     roomsSnapshot = rooms;
     const g7List = rooms.filter((r) => r.grade === 'G7');
-    const g8List = rooms.filter((r) => r.grade === 'G8');
+    const g8List = rooms.filter((r) => ['G8', 'G9', 'G89'].includes(r.grade));
 
     statG7Count.textContent = `${g7List.length} 間房（${g7List.reduce((s, r) => s + r.players.length, 0)} 位學生）`;
     statG8Count.textContent = `${g8List.length} 間房（${g8List.reduce((s, r) => s + r.players.length, 0)} 位學生）`;
@@ -482,7 +507,7 @@
     }
 
     renderEmptyOrRooms(roomsG7, g7List, '尚未建立國一房間');
-    renderEmptyOrRooms(roomsG8, g8List, '尚未建立國二房間');
+    renderEmptyOrRooms(roomsG8, g8List, '尚未建立國二 / 國三房間');
 
     if (spectatorCode) {
       const current = rooms.find((r) => r.code === spectatorCode);
@@ -659,7 +684,7 @@
 
   function updateSpectatorModal(room) {
     specGradeBadge.textContent = room.gradeLabel;
-    specGradeBadge.className = `badge ${room.grade === 'G7' ? 'badge-g7' : 'badge-g8'}`;
+    specGradeBadge.className = `badge badge-${String(room.grade || 'g7').toLowerCase()}`;
     specCodeBadge.textContent = `房號 ${room.code}`;
     specTitle.textContent = `${room.name}（${statusLabel(room)}）`;
     specBtnPause.textContent = room.game.status === 'paused' ? '▶ 繼續' : '⏸ 暫停';
@@ -673,11 +698,14 @@
       room.game.timedMode
         ? `♾️ 第 ${room.game.wave} 波 · 剩餘 ${formatMMSS(room.game.timeRemaining)}`
         : (room.game.endlessMode ? `🔥 無盡第 ${room.game.wave} 波` : `波數 ${room.game.wave}/${room.game.totalWaves}`),
+      `地圖 ${room.mapName || '雙彎道'}`,
       `基地 HP ${room.game.baseHp}/${room.game.baseMaxHp}`,
       `算力 ${room.game.computeUsed}/${room.game.computeBudget}`,
       `金幣 🪙 ${room.game.coins || 0}`,
       `積分 ${room.game.score} (最高連擊 ${room.game.bestCombo || 0}x)`,
-      room.turnMode === 'turn' ? `目前操作：${room.activeTurnNickname || '---'} (${room.turnTimeLeft}s)` : '單人模式'
+      room.turnMode === 'turn'
+        ? `目前操作：${room.activeTurnNickname || '---'} (${room.turnTimeLeft}s)`
+        : (room.turnMode === 'sync' ? '⚡ 雙人同步分工' : '單人模式')
     ];
     stats.forEach((txt) => {
       const b = document.createElement('span');

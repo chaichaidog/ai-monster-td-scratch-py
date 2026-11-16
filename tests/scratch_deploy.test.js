@@ -642,3 +642,90 @@ test('Socket.IO teacher co-op setup, PIN verification, and teacher + G8 turn pla
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('Socket.IO 8-9 grade co-op room (G8+G9 sync on twin_lanes) enforces G7 exclusion and parallel T1/T2 vs T3/T4', async () => {
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const wsUrl = `ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`;
+
+  const teacherSock = new MiniSioClient(wsUrl);
+  const g8Sock = new MiniSioClient(wsUrl);
+  const g9Sock = new MiniSioClient(wsUrl);
+  const g7Sock = new MiniSioClient(wsUrl);
+
+  try {
+    const loginRes = await fetch(`${baseUrl}/api/teacher/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: process.env.TEACHER_PIN || '1234' })
+    });
+    const loginData = await loginRes.json();
+
+    await teacherSock.connect();
+    await g8Sock.connect();
+    await g9Sock.connect();
+    await g7Sock.connect();
+
+    await teacherSock.emitAsync('teacher:auth', { token: loginData.token });
+    const setup89 = await teacherSock.emitAsync('teacher:create_89_setup', {});
+    assert.equal(setup89.ok, true);
+    const g89Room = setup89.rooms.find((r) => r.grade === 'G89');
+    assert.ok(g89Room);
+    assert.equal(g89Room.mapId, 'twin_lanes');
+    assert.equal(g89Room.turnMode, 'sync');
+
+    const badG7 = await g7Sock.emitAsync('student:join_room', {
+      code: g89Room.code,
+      nickname: '國一生誤闖',
+      grade: 'G7'
+    });
+    assert.equal(badG7.ok, false);
+
+    const okG8 = await g8Sock.emitAsync('student:join_room', {
+      code: g89Room.code,
+      nickname: '國二選手',
+      grade: 'G8'
+    });
+    const okG9 = await g9Sock.emitAsync('student:join_room', {
+      code: g89Room.code,
+      nickname: '國三選手',
+      grade: 'G9'
+    });
+    assert.equal(okG8.ok, true);
+    assert.equal(okG9.ok, true);
+
+    await g8Sock.emitAsync('student:set_ready', { ready: true });
+    const startAck = await g9Sock.emitAsync('student:set_ready', { ready: true });
+    assert.equal(startAck.started, true);
+
+    // Parallel edits in sync mode: G8 deploys T1 while G9 deploys T3 simultaneously
+    const p1Deploy = await g8Sock.emitAsync('student:update_turret', {
+      turretId: 'T1',
+      blocks: [
+        { id: 's1w', type: 'set_weapon', weapon: 'frost' },
+        { id: 's1l', type: 'loop', loopMode: 'burst', count: 2 }
+      ]
+    });
+    const p2Deploy = await g9Sock.emitAsync('student:update_turret', {
+      turretId: 'T3',
+      blocks: [
+        { id: 's2w', type: 'set_weapon', weapon: 'chain' },
+        { id: 's2l', type: 'loop', loopMode: 'multi', count: 2 }
+      ]
+    });
+    const p1WrongTurret = await g8Sock.emitAsync('student:update_turret', {
+      turretId: 'T3',
+      blocks: [{ id: 'sw', type: 'set_weapon', weapon: 'laser' }]
+    });
+    assert.equal(p1Deploy.ok, true);
+    assert.equal(p2Deploy.ok, true);
+    assert.equal(p1WrongTurret.ok, false);
+  } finally {
+    g7Sock.close();
+    g8Sock.close();
+    g9Sock.close();
+    teacherSock.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

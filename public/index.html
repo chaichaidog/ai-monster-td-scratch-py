@@ -63,19 +63,23 @@
           </div>
 
           <div class="form-group">
-            <label class="form-label">選擇你的身分／年級（國一與國二不可共同遊玩）</label>
+            <label class="form-label">選擇你的身分／年級（國一與國二/國三不混房）</label>
             <div class="grade-picker">
               <button type="button" class="grade-option active-g7" data-grade="G7">
                 <strong>🟢 國一 (七年級)</strong>
-                <span>僅可進入國一專屬房間</span>
+                <span>僅進國一專屬房</span>
               </button>
               <button type="button" class="grade-option" data-grade="G8">
                 <strong>🟣 國二 (八年級)</strong>
-                <span>僅可進入國二專屬房間</span>
+                <span>國二 / 8-9年級聯防房</span>
+              </button>
+              <button type="button" class="grade-option" data-grade="G9">
+                <strong>🔵 國三 (九年級)</strong>
+                <span>國三 / 8-9年級聯防房</span>
               </button>
               <button type="button" class="grade-option teacher-option" data-grade="TEACHER">
-                <strong>👩‍🏫 老師陪玩身分（和國二／國一學生一起打）</strong>
-                <span>驗證教師密碼後，可加入學生房間雙人輪流同樂！</span>
+                <strong>👩‍🏫 老師陪玩身分（和國一／國二／國三學生一起打）</strong>
+                <span>驗證教師密碼後，可加入任何學生房間雙人同樂！</span>
               </button>
             </div>
           </div>
@@ -227,6 +231,12 @@
         <button id="btn-skip-wave" class="btn btn-sm hidden" type="button">⚡ 立即出怪</button>
         <button id="btn-end-turn" class="btn btn-amber hidden" type="button">完成調整，換隊友接手 ↻</button>
       </div>
+    </div>
+
+    <!-- Active Relics + Cross-Room Read-Only Leaderboard Strip -->
+    <div id="status-strip-row" class="status-strip-row">
+      <div id="relics-strip" class="relics-strip">✨ 尚未取得戰術晶片（第 3、6、9 波 3 選 1）</div>
+      <div id="class-leaderboard-bar" class="class-leaderboard-bar hidden"></div>
     </div>
 
     <!-- Battlefield + Scratch Workspace -->
@@ -398,6 +408,28 @@
       </div>
     </div>
   </section>
+
+  <!-- Roguelike Relic Choice Modal (Every 3 Waves) -->
+  <div id="relic-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 680px; text-align: center;">
+      <span id="relic-modal-timer" class="badge badge-amber" style="margin-bottom: 8px;">⏱️ 20 秒內 3 選 1（戰場已貼心暫停）</span>
+      <h2 id="relic-modal-title" style="margin: 4px 0 6px; font-size: 1.5rem; color: #fde68a;">⚡ 戰術晶片 3 選 1</h2>
+      <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0;">
+        選一張能強化你目前 Scratch 積木流派的永久晶片！
+      </p>
+      <div id="relic-cards-grid" class="relic-cards-grid"></div>
+    </div>
+  </div>
+
+  <!-- Python Mystery Chest Modal -->
+  <div id="chest-quiz-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 540px;">
+      <span class="badge badge-pink" style="margin-bottom: 8px;">🔐 Python 密碼寶箱</span>
+      <h3 id="chest-quiz-picker" style="margin: 2px 0 8px; color: #f5d0fe; font-size: 1rem;">全隊點擊解碼！</h3>
+      <div id="chest-quiz-question" style="font-weight: 800; font-size: 1.05rem; margin-bottom: 14px; line-height: 1.5; background: #060b16; border: 1px solid var(--border-bright); padding: 12px; border-radius: 10px;"></div>
+      <div id="chest-quiz-options" class="chest-options-col"></div>
+    </div>
+  </div>
 
   <!-- Game Over Modal -->
   <div id="gameover-modal" class="modal-backdrop hidden">

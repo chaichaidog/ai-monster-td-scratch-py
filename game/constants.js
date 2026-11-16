@@ -104,6 +104,7 @@ const GRADES = {
     id: 'G7',
     label: '國一 (七年級)',
     shortLabel: '國一',
+    allowedStudentGrades: ['G7'],
     hpMultiplier: 1.0,
     speedMultiplier: 1.0,
     startingBudget: 86,
@@ -115,12 +116,84 @@ const GRADES = {
     id: 'G8',
     label: '國二 (八年級)',
     shortLabel: '國二',
+    allowedStudentGrades: ['G8'],
     hpMultiplier: 1.15,
     speedMultiplier: 1.06,
     startingBudget: 80,
     budgetPerWave: 12,
     startingCoins: 10,
     baseMaxHp: 100
+  },
+  G9: {
+    id: 'G9',
+    label: '國三 (九年級)',
+    shortLabel: '國三',
+    allowedStudentGrades: ['G9'],
+    hpMultiplier: 1.25,
+    speedMultiplier: 1.08,
+    startingBudget: 78,
+    budgetPerWave: 12,
+    startingCoins: 10,
+    baseMaxHp: 100
+  },
+  G89: {
+    id: 'G89',
+    label: '國二＆國三共玩 (8-9年級聯防)',
+    shortLabel: '8-9年級',
+    allowedStudentGrades: ['G8', 'G9'],
+    hpMultiplier: 1.2,
+    speedMultiplier: 1.07,
+    startingBudget: 80,
+    budgetPerWave: 12,
+    startingCoins: 10,
+    baseMaxHp: 100
+  }
+};
+
+const MAPS = {
+  classic_s: {
+    id: 'classic_s',
+    name: '🗺️ S型基地防線（單線入門）',
+    shortName: 'S型單線防線',
+    desc: '單路線蜿蜒推進，適合熱身練習與雙塔連鎖防守。',
+    paths: [PATH_WAYPOINTS],
+    turretSlots: TURRET_SLOTS,
+    tacticalZones: [
+      { id: 'tile_haste_s', kind: 'haste', label: '⚡ 電池格 +25%速', x: 470, y: 260, radius: 40 },
+      { id: 'tile_range_s', kind: 'range', label: '🎯 高台 +45射程', x: 255, y: 255, radius: 40 }
+    ]
+  },
+  twin_lanes: {
+    id: 'twin_lanes',
+    name: '🗺️ 雙傳送門夾擊（雙路線大戰）',
+    shortName: '雙路線夾擊',
+    desc: '怪物從上下兩座傳送門分路進攻！善用移動積木支援＆函式複製防線。',
+    paths: [
+      [
+        { x: 40, y: 95 },
+        { x: 290, y: 95 },
+        { x: 420, y: 210 },
+        { x: 600, y: 210 },
+        { x: 760, y: 260 }
+      ],
+      [
+        { x: 40, y: 425 },
+        { x: 290, y: 425 },
+        { x: 420, y: 310 },
+        { x: 600, y: 310 },
+        { x: 760, y: 260 }
+      ]
+    ],
+    turretSlots: [
+      { id: 'T1', name: '上路先鋒塔 #1', x: 175, y: 155, roleHint: '看守上方傳送門來襲怪物' },
+      { id: 'T2', name: '下路先鋒塔 #2', x: 175, y: 365, roleHint: '看守下方傳送門來襲怪物' },
+      { id: 'T3', name: '雙路交匯核心 #3', x: 455, y: 260, roleHint: '位居中央十字點，適合掃描雙路' },
+      { id: 'T4', name: '基地門神塔 #4', x: 665, y: 260, roleHint: '守住雙路匯流後的基地最終防線' }
+    ],
+    tacticalZones: [
+      { id: 'tile_haste_twin', kind: 'haste', label: '⚡ 中樞電池 +25%速', x: 495, y: 260, radius: 40 },
+      { id: 'tile_range_twin', kind: 'range', label: '🎯 高台 +45射程', x: 325, y: 165, radius: 38 }
+    ]
   }
 };
 
@@ -172,7 +245,7 @@ const MONSTER_TYPES = {
   },
   swarm: {
     type: 'swarm',
-    name: '分裂蟲群',
+    name: '小型蟲群',
     hp: 42,
     shield: 0,
     speed: 78,
@@ -184,6 +257,54 @@ const MONSTER_TYPES = {
     color: '#34d399',
     isBoss: false,
     tag: '群體'
+  },
+  splitter: {
+    type: 'splitter',
+    name: '細胞分裂史萊姆',
+    hp: 105,
+    shield: 0,
+    speed: 68,
+    armor: 0,
+    baseDamage: 10,
+    score: 26,
+    coins: 6,
+    radius: 17,
+    color: '#10b981',
+    isBoss: false,
+    splitsOnSingleKill: true,
+    tag: '分裂'
+  },
+  medic: {
+    type: 'medic',
+    name: '戰地醫護無人機',
+    hp: 95,
+    shield: 35,
+    speed: 64,
+    armor: 0,
+    baseDamage: 10,
+    score: 32,
+    coins: 9,
+    radius: 16,
+    color: '#4ade80',
+    isBoss: false,
+    healsNearby: true,
+    tag: '補血'
+  },
+  stealth: {
+    type: 'stealth',
+    name: '幽靈潛行者',
+    hp: 110,
+    shield: 0,
+    speed: 96,
+    armor: 1,
+    baseDamage: 14,
+    score: 36,
+    coins: 9,
+    radius: 14,
+    color: '#a78bfa',
+    isBoss: false,
+    stealthUntilMidOrFrost: true,
+    tag: '潛行'
   },
   gold_slime: {
     type: 'gold_slime',
@@ -298,7 +419,7 @@ const WAVES = [
   {
     wave: 3,
     title: '第三波：能量護盾與黃金史萊姆',
-    hint: '護盾無人機與超會跑的「黃金史萊姆」出現！打倒黃金怪可獲得 45 金幣放技能！',
+    hint: '護盾無人機與超會跑的「黃金史萊姆」出現！打倒黃金怪賺金幣，還有機會撿密碼寶箱！',
     spawns: [
       { type: 'shield', count: 4, interval: 1.85 },
       { type: 'gold_slime', count: 1, interval: 1.5 },
@@ -307,30 +428,31 @@ const WAVES = [
   },
   {
     wave: 4,
-    title: '第四波：蟲群海戰術',
-    hint: '大量蟲群湧出！拉入「掃描最多 N 隻目標」迴圈積木，或使用 ⛓️ 連鎖閃電！',
+    title: '第四波：細胞分裂潮',
+    hint: '「細胞分裂史萊姆」沒用 ⛓️閃電/💥重砲/📡掃描N隻 消滅的話死後會分裂！',
     spawns: [
-      { type: 'swarm', count: 12, interval: 0.72 },
-      { type: 'tank', count: 3, interval: 2.1 }
+      { type: 'splitter', count: 5, interval: 1.5 },
+      { type: 'swarm', count: 9, interval: 0.78 },
+      { type: 'tank', count: 2, interval: 2.2 }
     ]
   },
   {
     wave: 5,
-    title: '第五波：AI 哨兵領主降臨',
-    hint: '第一隻 BOSS 來了！快用「函式積木」把破盾連發模組套用多座砲塔，必要時施放技能！',
+    title: '第五波：哨兵領主與戰地補師',
+    hint: '注意「💚 戰地醫護無人機」會幫周圍補血！快用「如果 <有護盾>」或「如果 <BOSS>」精準點殺！',
     spawns: [
+      { type: 'medic', count: 3, interval: 2.0 },
       { type: 'shield', count: 4, interval: 1.55 },
-      { type: 'swarm', count: 8, interval: 0.8 },
       { type: 'boss_alpha', count: 1, interval: 2.4 }
     ]
   },
   {
     wave: 6,
-    title: '第六波：幻影突襲',
-    hint: '超高速「幻影突襲者」登場！拉「❄️ 冰霜緩速彈」或「巡邏移動」積木攔截牠們！',
+    title: '第六波：幽靈潛行突襲',
+    hint: '「👻 幽靈潛行者」前半段有減傷！用「❄️ 冰霜彈」顯形，或設 `if progress > 0.65` 攔截！',
     spawns: [
-      { type: 'phantom', count: 6, interval: 1.15 },
-      { type: 'shield', count: 4, interval: 1.5 },
+      { type: 'stealth', count: 5, interval: 1.3 },
+      { type: 'phantom', count: 5, interval: 1.15 },
       { type: 'gold_slime', count: 1, interval: 1.2 }
     ]
   },
@@ -542,7 +664,91 @@ const FEEDBACK_TAGS = [
   '迴圈連射爆打',
   '用函式省算力',
   '雙人／師生合作',
-  '打最終 BOSS'
+  '三選一戰術晶片'
+];
+
+const RELIC_CARDS = [
+  {
+    id: 'loop_plus',
+    name: '🔁 迴圈超頻晶片',
+    badge: '迴圈強化',
+    desc: '所有放入「for 重複迴圈」的砲塔免費多打 +1 下（不消耗額外算力！）'
+  },
+  {
+    id: 'if_bounty',
+    name: '🔀 條件賞金晶片',
+    badge: '條件獎勵',
+    desc: '只要「if 條件」命中優先怪物並擊殺，額外掉落 +2 🪙 金幣！'
+  },
+  {
+    id: 'fn_master',
+    name: '🧩 函式壓縮晶片',
+    badge: '函式折扣',
+    desc: '透過「我的函式 (def)」套用砲塔時，算力折扣從 85 折再降為 7 折！'
+  },
+  {
+    id: 'frost_nova',
+    name: '❄️ 寒霜擴散晶片',
+    badge: '控場進化',
+    desc: '冰霜武器凍結半徑擴大至 95px，減速延長 0.8 秒（可破幽靈潛行）！'
+  },
+  {
+    id: 'auto_magnet',
+    name: '🧲 自動吸金磁鐵',
+    badge: '經濟輔助',
+    desc: '地圖掉落的金幣光球超過 4 秒未撿取會自動吸入基地金庫！'
+  },
+  {
+    id: 'range_boost',
+    name: '📡 全隊雷達增幅',
+    badge: '免費射程',
+    desc: '全隊 T1～T4 砲塔射程免費永久 +25px，覆蓋更廣！'
+  }
+];
+
+const PYTHON_CHEST_QUIZZES = [
+  {
+    id: 'q_var_add',
+    question: '原本 damage = 25，又執行了一行 damage += 10，現在每次傷害變多少？',
+    options: ['變成 10', '變成 35（原本再加 10）', '還是 25 不變'],
+    correctIndex: 1,
+    explain: '+= 代表「在原本的數字上面再往上累加」喔！'
+  },
+  {
+    id: 'q_for_loop',
+    question: '想讓砲塔不要只打 3 發就停機、要一直連射，Python 需要哪個語法？',
+    options: ['for i in range(N): （重複迴圈）', '# 註解說明', 'damage = 20'],
+    correctIndex: 0,
+    explain: 'for 就是 Scratch 的「重複 N 次迴圈」，能讓砲塔持續連射！'
+  },
+  {
+    id: 'q_if_shield',
+    question: '看見程式碼寫 if monster.shield > 0:，代表砲塔在做什麼？',
+    options: ['把怪物冰凍起來', '如果怪物有能量護盾就優先打牠', '把砲塔飛到角落'],
+    correctIndex: 1,
+    explain: 'if 就是「如果...那麼」，先檢查怪物的 shield（護盾）是不是大於 0！'
+  },
+  {
+    id: 'q_def_fn',
+    question: '使用 def guard_base(): 把多座砲塔套用同一組積木有什麼好處？',
+    options: ['全隊省算力折扣＋修改函式能全部砲塔一起升級', '怪物會變更快', '砲塔會消失'],
+    correctIndex: 0,
+    explain: 'def 定義一次共用招式，既省算力又能一次維護多座砲塔！'
+  },
+  {
+    id: 'q_move_xy',
+    question: 'turret.move_to(390, 270) 括號裡的 390 和 270 代表什麼？',
+    options: ['傷害與金幣', '地圖上的左右 (X) 與上下 (Y) 座標', '迴圈次數'],
+    correctIndex: 1,
+    explain: 'move_to(X, Y) 會控制砲塔飛到戰場指定的 X, Y 座標位置！'
+  },
+  {
+    id: 'q_set_weapon',
+    question: 'turret.set_weapon("chain") 會幫砲塔裝上哪種武器？',
+    options: ['⛓️ 連鎖閃電（電弧彈跳消滅分裂怪）', '❄️ 冰霜緩速彈', '💥 等離子重砲'],
+    correctIndex: 0,
+    explain: '"chain" 是連鎖閃電，專門打分裂蟲群和破護盾超有效！'
+  }
 ];
 
 module.exports = {
@@ -551,6 +757,7 @@ module.exports = {
   PATH_WAYPOINTS,
   TURRET_SLOTS,
   MOVE_PRESETS,
+  MAPS,
   WEAPONS,
   SKILLS,
   GRADES,
@@ -565,5 +772,7 @@ module.exports = {
   TIMED_ENDLESS_DURATION_SEC,
   TIMED_BOSS_SPAWN_REMAINING_SEC,
   GAME_MODES,
-  FEEDBACK_TAGS
+  FEEDBACK_TAGS,
+  RELIC_CARDS,
+  PYTHON_CHEST_QUIZZES
 };
