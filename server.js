@@ -278,11 +278,16 @@ io.on('connection', (socket) => {
       turretId,
       payload
     );
+    let updatedTurret = null;
     if (res.ok) {
       broadcastRoomState(res.room);
       broadcastTeacherDashboard();
+      const serialized = roomManager.serializeRoom(res.room, true);
+      updatedTurret = serialized && serialized.game
+        ? serialized.game.turrets.find((t) => t.id === turretId) || null
+        : null;
     }
-    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error, line: res.line });
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error, line: res.line, turret: updatedTurret });
   });
 
   socket.on('student:use_skill', ({ skillId } = {}, ack) => {
@@ -450,6 +455,12 @@ function startSimulationLoop() {
   }, 50);
 }
 
+function stopSimulationLoop() {
+  if (!simInterval) return;
+  clearInterval(simInterval);
+  simInterval = null;
+}
+
 if (require.main === module) {
   startSimulationLoop();
   server.listen(PORT, '0.0.0.0', () => {
@@ -463,6 +474,7 @@ module.exports = {
   server,
   io,
   roomManager,
-  startSimulationLoop
+  startSimulationLoop,
+  stopSimulationLoop
 };
 

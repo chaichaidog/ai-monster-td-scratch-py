@@ -11,6 +11,9 @@
   let selectedTurretId = 'T1';
   let activeTab = 'scratch';
   let dirtyDraft = false;
+  let deployInFlight = false;
+  let deployErrorMsg = '';
+  let lastPreviewHtml = '';
   let renderer = null;
   let lastActiveTurnId = null;
   let dismissedBannerId = null;
@@ -377,6 +380,9 @@
     roomState = null;
     myPlayerId = null;
     dirtyDraft = false;
+    deployInFlight = false;
+    deployErrorMsg = '';
+    lastPreviewHtml = '';
     highlightBlockId = null;
     lastRenderedBlocksKey = '';
     lastTurretPillsKey = '';
@@ -546,13 +552,27 @@
     }
   }
 
+  function computeBlocksRenderKey(canEdit) {
+    const fns = (roomState && roomState.game && roomState.game.functions) || [];
+    return JSON.stringify({
+      blocks: workspaceBlocks,
+      canEdit,
+      mapPickBlockId,
+      fnIds: fns.map((f) => `${f.id}:${f.name}:${f.label || ''}`)
+    });
+  }
+
   function markDraftEdited(blockId, rebuildBlocks = false) {
     dirtyDraft = true;
+    deployErrorMsg = '';
     highlightBlockId = blockId || highlightBlockId;
     sound.playBlockSnap();
     if (rebuildBlocks) {
       lastRenderedBlocksKey = '';
-      renderWorkspaceBlocks();
+      renderWorkspaceBlocks(true);
+    } else if (roomState && roomState.game) {
+      const canEdit = isMyTurn() && roomState.game.status === 'playing';
+      lastRenderedBlocksKey = computeBlocksRenderKey(canEdit);
     }
     updateScratchPreview();
   }
@@ -629,7 +649,26 @@
     dragSource = null;
   });
 
-  function makeSelect(options, currentVal, disabled, onChange) {
+  function attachBlockDragGuard(ctrl, blockEl, canEdit) {
+    const disableDrag = () => {
+      if (blockEl) blockEl.draggable = false;
+    };
+    const restoreDrag = () => {
+      if (blockEl && document.activeElement !== ctrl) {
+        blockEl.draggable = canEdit;
+      }
+    };
+    ctrl.addEventListener('pointerdown', disableDrag);
+    ctrl.addEventListener('mousedown', disableDrag);
+    ctrl.addEventListener('focus', disableDrag);
+    ctrl.addEventListener('pointerup', restoreDrag);
+    ctrl.addEventListener('mouseup', restoreDrag);
+    ctrl.addEventListener('blur', () => {
+      if (blockEl) blockEl.draggable = canEdit;
+    });
+  }
+
+  function makeSelect(options, currentVal, disabled, onChange, blockEl = null, canEdit = false) {
     const sel = document.createElement('select');
     sel.className = 'sb-select';
     sel.disabled = disabled;
@@ -641,10 +680,12 @@
       sel.appendChild(opt);
     });
     sel.addEventListener('change', () => onChange(sel.value));
+    if (blockEl) attachBlockDragGuard(sel, blockEl, canEdit);
     return sel;
   }
 
-  function makeNumInput(val, min, max, step, disabled, onChange, placeholder = '') {
+  function makeNumInput(val, min, max, step, disabled, onChange, placeholder = '', options = {}) {
+    const { allowEmpty = false, blockEl = null, canEdit = false, onCommit = null } = options;
     const inp = document.createElement('input');
     inp.type = 'number';
     inp.className = 'sb-input';
@@ -654,8 +695,73 @@
     if (placeholder) inp.placeholder = placeholder;
     inp.value = val !== null && val !== undefined ? String(val) : '';
     inp.disabled = disabled;
-    inp.addEventListener('input', () => onChange(inp.value));
+
+    let lastValid = (val !== null && val !== undefined && Number.isFinite(Number(val)))
+      ? Number(val)
+      : (allowEmpty ? null : min);
+
+    const commit = (syncDom = true) => {
+      const raw = inp.value.trim();
+      if (allowEmpty && raw === '') {
+        lastValid = null;
+        if (onCommit) onCommit(null);
+        else onChange('');
+        return;
+      }
+      let n = raw === '' ? NaN : Number(raw);
+      if (!Number.isFinite(n)) {
+        n = lastValid !== null && lastValid !== undefined ? lastValid : min;
+      }
+      n = Math.max(min, Math.min(max, n));
+      n = step >= 1 ? Math.round(n) : Math.round(n * 100) / 100;
+      lastValid = n;
+      if (syncDom) inp.value = String(n);
+      if (onCommit) onCommit(n);
+      else onChange(String(n));
+    };
+
+    inp._commitNumber = commit;
+    inp._syncExternalValue = (nextVal) => {
+      const normalized = nextVal !== null && nextVal !== undefined && Number.isFinite(Number(nextVal))
+        ? Number(nextVal)
+        : (allowEmpty ? null : min);
+      lastValid = normalized;
+      inp.value = nextVal !== null && nextVal !== undefined ? String(nextVal) : '';
+    };
+
+    inp.addEventListener('input', () => {
+      const raw = inp.value.trim();
+      if (allowEmpty && raw === '') {
+        lastValid = null;
+        onChange('');
+        return;
+      }
+      if (raw === '' || raw === '-') {
+        // Keep user's typing buffer untouched instead of coercing "" -> 0 mid-edit
+        dirtyDraft = true;
+        deployErrorMsg = '';
+        return;
+      }
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        lastValid = n;
+        onChange(raw);
+      }
+    });
+    inp.addEventListener('change', () => commit(true));
+    inp.addEventListener('blur', () => commit(true));
+    if (blockEl) attachBlockDragGuard(inp, blockEl, canEdit);
     return inp;
+  }
+
+  function flushWorkspaceInputs() {
+    if (!scratchBlocksList) return;
+    const inputs = scratchBlocksList.querySelectorAll('input.sb-input');
+    inputs.forEach((inp) => {
+      if (typeof inp._commitNumber === 'function') {
+        inp._commitNumber(true);
+      }
+    });
   }
 
   function getBlockThemeClass(type) {
@@ -721,12 +827,23 @@
     return actions;
   }
 
-  function renderWorkspaceBlocks() {
+  function commitBlockFieldSilent() {
+    if (roomState && roomState.game) {
+      const canEdit = isMyTurn() && roomState.game.status === 'playing';
+      lastRenderedBlocksKey = computeBlocksRenderKey(canEdit);
+    }
+    updateScratchPreview();
+  }
+
+  function renderWorkspaceBlocks(force = false) {
     const turret = getSelectedTurret();
     const canEdit = isMyTurn() && Boolean(roomState && roomState.game && roomState.game.status === 'playing');
-    const fns = (roomState && roomState.game && roomState.game.functions) || [];
-    const key = JSON.stringify({ blocks: workspaceBlocks, canEdit, mapPickBlockId, fnIds: fns.map((f) => `${f.id}:${f.name}`) });
-    if (key === lastRenderedBlocksKey) return;
+    if (!force && canEdit && scratchBlocksList.contains(document.activeElement)) {
+      const tag = document.activeElement.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT') return;
+    }
+    const key = computeBlocksRenderKey(canEdit);
+    if (!force && key === lastRenderedBlocksKey) return;
     lastRenderedBlocksKey = key;
 
     scratchBlocksList.innerHTML = '';
@@ -811,27 +928,49 @@
           if (val !== 'custom' && meta.movePresets && meta.movePresets[val]) {
             b.x = meta.movePresets[val].x;
             b.y = meta.movePresets[val].y;
-            if (xInput) xInput.value = String(b.x);
-            if (yInput) yInput.value = String(b.y);
+            if (xInput) xInput._syncExternalValue(b.x);
+            if (yInput) yInput._syncExternalValue(b.y);
           }
           markDraftEdited(b.id, false);
-        });
+        }, blockEl, canEdit);
         xInput = makeNumInput(b.x, 50, 790, 5, !canEdit, (val) => {
           const n = Number(val);
           if (Number.isFinite(n)) {
-            b.x = Math.max(50, Math.min(790, Math.round(n)));
+            b.x = Math.round(n);
             b.preset = 'custom';
             presetSel.value = 'custom';
             markDraftEdited(b.id, false);
+          }
+        }, '', {
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            if (b.x !== n) {
+              b.x = n;
+              b.preset = 'custom';
+              presetSel.value = 'custom';
+            }
+            commitBlockFieldSilent();
           }
         });
         yInput = makeNumInput(b.y, 50, 470, 5, !canEdit, (val) => {
           const n = Number(val);
           if (Number.isFinite(n)) {
-            b.y = Math.max(50, Math.min(470, Math.round(n)));
+            b.y = Math.round(n);
             b.preset = 'custom';
             presetSel.value = 'custom';
             markDraftEdited(b.id, false);
+          }
+        }, '', {
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            if (b.y !== n) {
+              b.y = n;
+              b.preset = 'custom';
+              presetSel.value = 'custom';
+            }
+            commitBlockFieldSilent();
           }
         });
         const pickBtn = document.createElement('button');
@@ -844,7 +983,7 @@
           e.stopPropagation();
           setMapPickMode(mapPickBlockId === b.id ? null : b.id);
           lastRenderedBlocksKey = '';
-          renderWorkspaceBlocks();
+          renderWorkspaceBlocks(true);
         });
         row.appendChild(lbl);
         row.appendChild(presetSel);
@@ -864,13 +1003,22 @@
           (val) => {
             b.axis = val === 'y' ? 'y' : 'x';
             markDraftEdited(b.id, false);
-          }
+          },
+          blockEl,
+          canEdit
         );
         const distInp = makeNumInput(b.distance ?? 50, 20, 75, 5, !canEdit, (val) => {
           const n = Number(val);
           if (Number.isFinite(n)) {
-            b.distance = Math.max(20, Math.min(75, Math.round(n)));
+            b.distance = Math.round(n);
             markDraftEdited(b.id, false);
+          }
+        }, '', {
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            b.distance = n;
+            commitBlockFieldSilent();
           }
         });
         row.appendChild(axisSel);
@@ -888,7 +1036,7 @@
         const weaponSel = makeSelect(weaponOpts, b.weapon || 'laser', !canEdit, (val) => {
           b.weapon = val;
           markDraftEdited(b.id, false);
-        });
+        }, blockEl, canEdit);
         row.appendChild(weaponSel);
         row.appendChild(createBlockActionButtons(idx, b.id, canEdit));
         blockEl.appendChild(row);
@@ -912,12 +1060,12 @@
           b.varName = val;
           b.value = applyDefaultForVar(val, b.op);
           markDraftEdited(b.id, true);
-        });
+        }, blockEl, canEdit);
         const opSel = makeSelect(opOpts, b.op, !canEdit, (val) => {
           b.op = val === 'add' ? 'add' : 'set';
           b.value = applyDefaultForVar(b.varName, b.op);
           markDraftEdited(b.id, true);
-        });
+        }, blockEl, canEdit);
 
         const isRate = b.varName === 'fire_rate';
         const isRange = b.varName === 'attack_range';
@@ -930,6 +1078,13 @@
           if (Number.isFinite(n)) {
             b.value = n;
             markDraftEdited(b.id, false);
+          }
+        }, '', {
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            b.value = n;
+            commitBlockFieldSilent();
           }
         });
         row.appendChild(varSel);
@@ -944,7 +1099,7 @@
         const condSel1 = makeSelect(condOpts, b.cond || 'has_shield', !canEdit, (val) => {
           b.cond = val;
           markDraftEdited(b.id, false);
-        });
+        }, blockEl, canEdit);
         const logicSel = makeSelect(
           [['none', '單一條件'], ['and', '而且 (and)'], ['or', '或者 (or)']],
           b.logic || 'none',
@@ -955,7 +1110,9 @@
               b.cond2 = 'near_base';
             }
             markDraftEdited(b.id, true);
-          }
+          },
+          blockEl,
+          canEdit
         );
 
         row.appendChild(document.createTextNode('🔀 如果'));
@@ -970,7 +1127,7 @@
           const condSel2 = makeSelect(condOpts, b.cond2 === 'none' ? 'near_base' : b.cond2, !canEdit, (val) => {
             b.cond2 = val;
             markDraftEdited(b.id, false);
-          });
+          }, blockEl, canEdit);
           row2.appendChild(condSel2);
         }
         row2.appendChild(document.createTextNode('那麼優先鎖定，否則打'));
@@ -978,7 +1135,7 @@
         const fbSel = makeSelect(fbOpts, b.fallback || 'closest_base', !canEdit, (val) => {
           b.fallback = val;
           markDraftEdited(b.id, false);
-        });
+        }, blockEl, canEdit);
         row2.appendChild(fbSel);
         blockEl.appendChild(row2);
       } else if (b.type === 'loop') {
@@ -990,13 +1147,22 @@
           (val) => {
             b.loopMode = val === 'multi' ? 'multi' : 'burst';
             markDraftEdited(b.id, false);
-          }
+          },
+          blockEl,
+          canEdit
         );
         const cntInp = makeNumInput(b.count ?? 2, 2, 4, 1, !canEdit, (val) => {
           const n = Number(val);
           if (Number.isFinite(n)) {
-            b.count = Math.max(2, Math.min(4, Math.round(n)));
+            b.count = Math.round(n);
             markDraftEdited(b.id, false);
+          }
+        }, '', {
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            b.count = n;
+            commitBlockFieldSilent();
           }
         });
         row.appendChild(modeSel);
@@ -1016,15 +1182,31 @@
           b.argDmg = null;
           b.argRate = null;
           markDraftEdited(b.id, true);
-        });
+        }, blockEl, canEdit);
         const dmgInp = makeNumInput(b.argDmg, 10, 90, 5, !canEdit, (val) => {
           b.argDmg = val === '' ? null : Number(val);
           markDraftEdited(b.id, false);
-        }, selectedFn ? `預設${selectedFn.damage}` : '預設');
+        }, selectedFn ? `預設${selectedFn.damage}` : '預設', {
+          allowEmpty: true,
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            b.argDmg = n;
+            commitBlockFieldSilent();
+          }
+        });
         const rateInp = makeNumInput(b.argRate, 0.5, 4.0, 0.25, !canEdit, (val) => {
           b.argRate = val === '' ? null : Number(val);
           markDraftEdited(b.id, false);
-        }, selectedFn ? `預設${selectedFn.fireRate}` : '預設');
+        }, selectedFn ? `預設${selectedFn.fireRate}` : '預設', {
+          allowEmpty: true,
+          blockEl,
+          canEdit,
+          onCommit: (n) => {
+            b.argRate = n;
+            commitBlockFieldSilent();
+          }
+        });
 
         row.appendChild(fnSel);
         row.appendChild(document.createTextNode('傷害'));
@@ -1063,7 +1245,10 @@
 
     editorCostPill.textContent = `算力預估: ${cost}`;
 
-    if (totalProjected > g.computeBudget) {
+    if (deployErrorMsg) {
+      scratchDiagnostic.className = 'py-diagnostic err';
+      scratchDiagnostic.textContent = `❌ 套用失敗：${deployErrorMsg}`;
+    } else if (totalProjected > g.computeBudget) {
       scratchDiagnostic.className = 'py-diagnostic err';
       scratchDiagnostic.textContent = `⚠️ 總算力超出上限（需要 ${totalProjected} / ${g.computeBudget}）！請降低數值或用金幣點上方「算力核心擴容」`;
     } else {
@@ -1074,47 +1259,76 @@
       scratchDiagnostic.textContent = `✅ [${wInfo}] · 位置 ${moveLabel} · 秒傷 ${dps} · 總算力 ${totalProjected}/${g.computeBudget}`;
     }
 
-    codePreview.innerHTML = Transpiler.blocksToHighlightedPythonHtml(
+    const nextHtml = Transpiler.blocksToHighlightedPythonHtml(
       workspaceBlocks,
       g.functions,
       turret.name,
       highlightBlockId
     );
+    if (nextHtml !== lastPreviewHtml) {
+      lastPreviewHtml = nextHtml;
+      codePreview.innerHTML = nextHtml;
+    }
   }
 
-  function syncEditorFromServer(turret) {
+  function syncEditorFromServer(turret, force = false) {
     if (!turret) return;
-    workspaceBlocks = Transpiler.sanitizeBlocks(cloneBlocks(turret.blocks || []));
+    const nextBlocks = Transpiler.sanitizeBlocks(cloneBlocks(turret.blocks || []));
+    const sameBlocks = !force && JSON.stringify(nextBlocks) === JSON.stringify(workspaceBlocks);
+    if (!sameBlocks) {
+      workspaceBlocks = nextBlocks;
+      deployErrorMsg = '';
+    }
     if (highlightBlockId && !workspaceBlocks.some((b) => b.id === highlightBlockId)) {
       highlightBlockId = workspaceBlocks[0] ? workspaceBlocks[0].id : null;
     }
-    renderWorkspaceBlocks();
+    renderWorkspaceBlocks(force);
     updateScratchPreview();
   }
 
   // Deploy Scratch Blocks -> Server
   btnDeployTurret.addEventListener('click', () => {
-    if (!roomState) return;
+    if (!roomState || deployInFlight) return;
+    flushWorkspaceInputs();
     setMapPickMode(null);
     sound.ensureContext();
+    deployInFlight = true;
+    deployErrorMsg = '';
+    const targetId = selectedTurretId;
     const deployingBlocks = Transpiler.sanitizeBlocks(workspaceBlocks);
     socket.emit(
       'student:update_turret',
-      { turretId: selectedTurretId, blocks: deployingBlocks },
+      { turretId: targetId, blocks: deployingBlocks },
       (res) => {
+        deployInFlight = false;
         if (!res || !res.ok) {
-          showToast((res && res.error) || '套用 Scratch 積木失敗');
+          deployErrorMsg = (res && res.error) || '套用 Scratch 積木失敗';
+          updateScratchPreview();
+          showToast(deployErrorMsg, 4800);
           return;
         }
         dirtyDraft = false;
+        deployErrorMsg = '';
+        if (res.turret && roomState && roomState.game && Array.isArray(roomState.game.turrets)) {
+          const idx = roomState.game.turrets.findIndex((t) => t.id === targetId);
+          if (idx !== -1) {
+            roomState.game.turrets[idx] = res.turret;
+          }
+          if (selectedTurretId === targetId) {
+            syncEditorFromServer(res.turret, true);
+            renderTurretPills(roomState.game.turrets);
+            renderEditorHeader(res.turret);
+          }
+        }
         sound.playBlockSnap();
-        showToast(`🚀 已套用 Scratch 積木到 ${selectedTurretId}（右下方 Python 已同步執行）！`);
+        showToast(`🚀 已套用 Scratch 積木到 ${targetId}（右下方 Python 已同步執行）！`);
       }
     );
   });
 
   // Save current workspace blocks as a reusable Function
   btnSaveFn.addEventListener('click', () => {
+    flushWorkspaceInputs();
     const cleanName = inputFnName.value.trim();
     if (!cleanName) {
       showToast('請先幫這組積木取個名字（例如：冰霜巡邏）');
@@ -1234,6 +1448,8 @@
           if (hitId !== selectedTurretId) {
             selectedTurretId = hitId;
             dirtyDraft = false;
+            deployInFlight = false;
+            deployErrorMsg = '';
             highlightBlockId = null;
             setMapPickMode(null);
             lastRenderedBlocksKey = '';
@@ -1242,7 +1458,7 @@
             renderer.setSelectedTurret(hitId);
             if (roomState) {
               const t = roomState.game.turrets.find((item) => item.id === hitId);
-              syncEditorFromServer(t);
+              syncEditorFromServer(t, true);
               renderTurretPills(roomState.game.turrets);
               renderEditorHeader(t);
             }
@@ -1305,13 +1521,15 @@
       btn.addEventListener('click', () => {
         selectedTurretId = t.id;
         dirtyDraft = false;
+        deployInFlight = false;
+        deployErrorMsg = '';
         highlightBlockId = null;
         setMapPickMode(null);
         lastRenderedBlocksKey = '';
         lastTurretPillsKey = '';
         lastFnListKey = '';
         if (renderer) renderer.setSelectedTurret(t.id);
-        syncEditorFromServer(t);
+        syncEditorFromServer(t, true);
         renderTurretPills(turrets);
         renderEditorHeader(t);
       });
@@ -1560,7 +1778,9 @@
     renderEditorHeader(currentTurret);
 
     const canEdit = myTurn && g.status === 'playing';
-    if (!dirtyDraft || !myTurn) {
+    const isEditingInput = canEdit && scratchBlocksList.contains(document.activeElement)
+      && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT');
+    if ((!dirtyDraft && !deployInFlight && !isEditingInput) || !myTurn) {
       syncEditorFromServer(currentTurret);
     } else {
       renderWorkspaceBlocks();
