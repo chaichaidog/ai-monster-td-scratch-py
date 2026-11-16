@@ -259,6 +259,21 @@ const MONSTER_TYPES = {
     color: '#ef4444',
     isBoss: true,
     tag: '終極 BOSS'
+  },
+  final_timed_boss: {
+    type: 'final_timed_boss',
+    name: '終焉時計領主 Chronos-Omega',
+    hp: 1450,
+    shield: 380,
+    speed: 35,
+    armor: 8,
+    baseDamage: 100,
+    score: 800,
+    coins: 120,
+    radius: 34,
+    color: '#e11d48',
+    isBoss: true,
+    tag: '20分終極BOSS'
   }
 };
 
@@ -505,6 +520,31 @@ const PYTHON_BOUNTIES = [
   }
 ];
 
+const TIMED_ENDLESS_DURATION_SEC = 1200; // 20 minutes
+const TIMED_BOSS_SPAWN_REMAINING_SEC = 55;
+
+const GAME_MODES = {
+  timed20: {
+    id: 'timed20',
+    label: '♾️ 20分鐘無限生存（無關卡限制，最後出終極BOSS）',
+    shortLabel: '20分鐘無限挑戰'
+  },
+  classic: {
+    id: 'classic',
+    label: '🎯 經典 8 波制（打完可進無限模式）',
+    shortLabel: '經典 8 波制'
+  }
+};
+
+const FEEDBACK_TAGS = [
+  '拖 Scratch 積木',
+  '看懂 Python 對照',
+  '迴圈連射爆打',
+  '用函式省算力',
+  '雙人／師生合作',
+  '打最終 BOSS'
+];
+
 module.exports = {
   MAP_WIDTH,
   MAP_HEIGHT,
@@ -521,5 +561,9 @@ module.exports = {
   LOOP_MODES,
   DEFAULT_FUNCTIONS,
   QUICK_TIPS,
-  PYTHON_BOUNTIES
+  PYTHON_BOUNTIES,
+  TIMED_ENDLESS_DURATION_SEC,
+  TIMED_BOSS_SPAWN_REMAINING_SEC,
+  GAME_MODES,
+  FEEDBACK_TAGS
 };

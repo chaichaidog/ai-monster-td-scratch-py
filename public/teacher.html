@@ -124,6 +124,25 @@
             </div>
           </div>
 
+          <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label" for="create-game-mode">關卡時間模式</label>
+              <select id="create-game-mode" class="select">
+                <option value="timed20">♾️ 20分鐘無限挑戰（無波數上限，約20分出最終BOSS結束）</option>
+                <option value="classic">🎯 經典 8 波制（破關後進20分鐘無限挑戰）</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="create-turn-duration">雙人思考回合時間</label>
+              <select id="create-turn-duration" class="select">
+                <option value="45">45 秒（預設，時間到自動存檔）</option>
+                <option value="60" selected>60 秒（推薦充裕思考＆教學時間）</option>
+                <option value="90">90 秒（超長思考時間）</option>
+                <option value="30">30 秒（快節奏）</option>
+              </select>
+            </div>
+          </div>
+
           <button class="btn btn-primary" type="submit">＋ 建立房間並產生房號</button>
         </form>
       </section>
@@ -147,6 +166,24 @@
         <div id="rooms-g8"></div>
       </section>
     </div>
+
+    <!-- Student Feedback Wall -->
+    <section class="card" style="margin-top: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <h3 style="margin: 0;">📋 學生課後回饋紀錄牆（即時查看心得與建議）</h3>
+          <div style="font-size: 0.84rem; color: var(--text-muted); margin-top: 2px;">
+            學生遊戲結束填寫完回饋表單送出後，內容會立刻顯示在這裡！
+          </div>
+        </div>
+        <span id="teacher-feedback-count" class="badge badge-amber">0 份回饋</span>
+      </div>
+      <div id="teacher-feedback-list" class="teacher-feedback-grid">
+        <div class="empty-placeholder" style="color: var(--text-dim); font-size: 0.88rem; padding: 8px 0;">
+          尚無學生送出回饋表單（本局結束後學生畫面會自動跳出填寫表單）
+        </div>
+      </div>
+    </section>
   </main>
 
   <!-- Spectator Modal -->
@@ -183,8 +220,8 @@
 
         <div style="display: flex; flex-direction: column; gap: 12px;">
           <div class="control-box">
-            <h4 style="margin: 0 0 8px;">🤖 學生目前的砲塔 AI 設定</h4>
-            <div id="spec-turrets-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+            <h4 style="margin: 0 0 8px;">🤖 學生目前的 Scratch 積木 ＆ Python 程式碼</h4>
+            <div id="spec-turrets-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
           </div>
           <div class="control-box">
             <h4 style="margin: 0 0 8px;">📜 即時操作與程式學習紀錄</h4>
@@ -199,6 +236,7 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script src="/js/renderer.js"></script>
+  <script src="/js/scratchTranspiler.js"></script>
   <script src="/js/teacher.js"></script>
 </body>
 </html>

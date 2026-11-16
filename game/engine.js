@@ -12,7 +12,9 @@ const {
   FALLBACK_TARGETS,
   LOOP_MODES,
   DEFAULT_FUNCTIONS,
-  PYTHON_BOUNTIES
+  PYTHON_BOUNTIES,
+  TIMED_ENDLESS_DURATION_SEC,
+  TIMED_BOSS_SPAWN_REMAINING_SEC
 } = require('./constants');
 const PythonTurretParser = require('../public/js/pythonParser');
 const ScratchTranspiler = require('../public/js/scratchTranspiler');
@@ -246,7 +248,13 @@ function buildWaveSpawnQueue(waveIndex, gradeCfg, difficulty = 'standard', modif
   return queue;
 }
 
-function createGameState({ grade = 'G7', maxWaves = WAVES.length, difficulty = 'standard' } = {}) {
+function createGameState({
+  grade = 'G7',
+  maxWaves = WAVES.length,
+  difficulty = 'standard',
+  gameMode = 'classic',
+  timeLimitSeconds = TIMED_ENDLESS_DURATION_SEC
+} = {}) {
   const gradeCfg = GRADES[grade] || GRADES.G7;
   const turrets = createInitialTurrets();
   const functions = DEFAULT_FUNCTIONS.map((f) => ({
@@ -254,20 +262,28 @@ function createGameState({ grade = 'G7', maxWaves = WAVES.length, difficulty = '
     blocks: f.blocks ? f.blocks.map((b) => ({ ...b })) : [],
     params: f.params ? f.params.map((p) => ({ ...p })) : []
   }));
-  const totalWaves = clamp(Number(maxWaves) || WAVES.length, 4, WAVES.length);
+  const isTimed20 = gameMode === 'timed20';
+  const totalWaves = isTimed20 ? 0 : clamp(Number(maxWaves) || WAVES.length, 4, WAVES.length);
+  const cleanLimit = Math.max(60, Number(timeLimitSeconds) || TIMED_ENDLESS_DURATION_SEC);
 
   return {
     grade: gradeCfg.id,
     difficulty,
+    gameMode: isTimed20 ? 'timed20' : 'classic',
     status: 'playing', // 'playing' | 'paused' | 'victory' | 'defeat'
-    endlessMode: false,
+    endlessMode: isTimed20,
+    timedMode: isTimed20,
+    timeLimitSeconds: cleanLimit,
+    timeRemaining: cleanLimit,
+    finalBossSpawned: false,
+    finalBossCleared: false,
     elapsed: 0,
     wave: 1,
     totalWaves,
     waveTitle: WAVES[0].title,
     waveHint: WAVES[0].hint,
     waveModifier: null,
-    waveDelay: 8.0,
+    waveDelay: 15.0,
     waveSpawnClock: 0,
     spawnQueue: buildWaveSpawnQueue(0, gradeCfg, difficulty, null),
     baseHp: gradeCfg.baseMaxHp,
@@ -864,6 +880,42 @@ function advanceGameTick(state, dt) {
     }
   }
 
+  if (state.timedMode) {
+    state.timeRemaining = Math.max(0, state.timeRemaining - dt);
+    const bossTriggerAt = Math.min(TIMED_BOSS_SPAWN_REMAINING_SEC, state.timeLimitSeconds * 0.15);
+    if (!state.finalBossSpawned && state.timeRemaining <= bossTriggerAt) {
+      state.finalBossSpawned = true;
+      state.waveDelay = 0;
+      state.spawnQueue = [];
+      const gradeCfg = GRADES[state.grade] || GRADES.G7;
+      const tpl = MONSTER_TYPES.final_timed_boss;
+      const waveScale = 1 + Math.max(0, state.wave - 1) * 0.12;
+      const start = PATH_WAYPOINTS[0];
+      state.monsters.push({
+        id: state.nextEntityId++,
+        ...tpl,
+        isFinalTimedBoss: true,
+        maxHp: Math.round(tpl.hp * gradeCfg.hpMultiplier * waveScale),
+        hp: Math.round(tpl.hp * gradeCfg.hpMultiplier * waveScale),
+        maxShield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
+        shield: Math.round(tpl.shield * gradeCfg.hpMultiplier * waveScale),
+        speed: Math.round(tpl.speed * gradeCfg.speedMultiplier),
+        x: start.x,
+        y: start.y,
+        distance: 0,
+        progress: 0,
+        slowTimer: 0
+      });
+      state.waveTitle = '🚨 最終決戰：20分鐘終極 BOSS 降臨！';
+      state.waveHint = '最後一隻「終焉時計領主」現身！打倒牠（或撐到最後結算）即結束本局挑戰！';
+      pushEvent(state, {
+        kind: 'wave_clear',
+        nextWave: state.wave,
+        title: '🚨 最後倒數！終極 BOSS「終焉時計領主」登場！'
+      });
+    }
+  }
+
   // 1. Wave delay / spawning
   if (state.waveDelay > 0) {
     state.waveDelay = Math.max(0, state.waveDelay - dt);
@@ -1077,8 +1129,27 @@ function advanceGameTick(state, dt) {
 
   state.monsters = state.monsters.filter((m) => m.hp > 0);
 
+  // Timed 20-minute final boss resolution
+  if (state.timedMode && state.finalBossSpawned) {
+    if (state.monsters.length === 0 && state.spawnQueue.length === 0) {
+      state.finalBossCleared = true;
+      state.status = 'victory';
+      state.score += state.baseHp * 6 + 500;
+      pushEvent(state, { kind: 'game_over', outcome: 'victory', timedFinish: true });
+      return;
+    }
+    if (state.timeRemaining <= 0) {
+      state.status = state.baseHp > 0 ? 'victory' : 'defeat';
+      if (state.status === 'victory') {
+        state.score += state.baseHp * 5 + 250;
+      }
+      pushEvent(state, { kind: 'game_over', outcome: state.status, timedFinish: true });
+      return;
+    }
+  }
+
   // 5. Wave completion / progression
-  if (state.spawnQueue.length === 0 && state.monsters.length === 0 && state.waveDelay === 0) {
+  if (!state.finalBossSpawned && state.spawnQueue.length === 0 && state.monsters.length === 0 && state.waveDelay === 0) {
     if (!state.endlessMode && state.wave >= state.totalWaves) {
       state.status = 'victory';
       state.score += state.baseHp * 5;
@@ -1095,7 +1166,7 @@ function advanceGameTick(state, dt) {
     state.waveTitle = waveDef.title;
     state.waveHint = waveDef.hint;
     state.waveModifier = modifier;
-    state.waveDelay = 4.0;
+    state.waveDelay = 10.0;
     state.waveSpawnClock = 0;
     state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier);
     state.computeBudget += gradeCfg.budgetPerWave;
@@ -1115,6 +1186,13 @@ function advanceGameTick(state, dt) {
 function continueEndlessMode(state) {
   if (state.status !== 'victory') return false;
   state.endlessMode = true;
+  state.timedMode = true;
+  state.gameMode = 'timed20';
+  state.totalWaves = 0;
+  state.finalBossSpawned = false;
+  state.finalBossCleared = false;
+  state.timeLimitSeconds = state.timeLimitSeconds || TIMED_ENDLESS_DURATION_SEC;
+  state.timeRemaining = Math.max(300, state.timeLimitSeconds - Math.floor(state.elapsed));
   state.status = 'playing';
   const nextWaveNum = state.wave + 1;
   const gradeCfg = GRADES[state.grade] || GRADES.G7;
@@ -1125,11 +1203,11 @@ function continueEndlessMode(state) {
   state.waveTitle = waveDef.title;
   state.waveHint = waveDef.hint;
   state.waveModifier = modifier;
-  state.waveDelay = 3.5;
+  state.waveDelay = 8.0;
   state.waveSpawnClock = 0;
   state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier);
   state.computeBudget += gradeCfg.budgetPerWave;
-  state.coins += 30;
+  state.coins += 18;
   return true;
 }
 
@@ -1582,8 +1660,14 @@ function serializeGameState(state) {
   return {
     grade: state.grade,
     difficulty: state.difficulty,
+    gameMode: state.gameMode || 'classic',
     status: state.status,
     endlessMode: state.endlessMode,
+    timedMode: Boolean(state.timedMode),
+    timeLimitSeconds: state.timeLimitSeconds || TIMED_ENDLESS_DURATION_SEC,
+    timeRemaining: Math.max(0, Math.ceil(state.timeRemaining || 0)),
+    finalBossSpawned: Boolean(state.finalBossSpawned),
+    finalBossCleared: Boolean(state.finalBossCleared),
     elapsed: Number(state.elapsed.toFixed(2)),
     wave: state.wave,
     totalWaves: state.totalWaves,

@@ -60,7 +60,7 @@ test('strict grade separation prevents G7 and G8 from playing together', () => {
 
 test('lobby next-step readiness and 2-player turn rotation work cleanly', () => {
   const rm = new RoomManager();
-  const { room } = rm.createRoom({ code: '101', grade: 'G7', maxPlayers: 2 });
+  const { room } = rm.createRoom({ code: '101', grade: 'G7', maxPlayers: 2, turnDuration: 25 });
 
   const p1 = rm.joinRoom({ code: '101', nickname: '學生甲', grade: 'G7', socketId: 's1' }).player;
   const p2 = rm.joinRoom({ code: '101', nickname: '學生乙', grade: 'G7', socketId: 's2' }).player;
@@ -595,6 +595,100 @@ test('T1-T4 start empty, no-loop turrets stop after 3 trial shots, and fn discou
     boundFunctionId: 'fn_shield'
   });
   assert.ok(fnCost < soloCost, `Expected bound function cost (${fnCost}) < standalone (${soloCost})`);
+});
+
+test('Timed 20-min endless mode (unlimited waves -> final boss finish), auto-save on turn expiry, and feedback', () => {
+  const Engine = require('../game/engine');
+  const { RoomManager } = require('../game/roomManager');
+
+  // 1. Timed endless mode has no wave cap, triggers Final Boss near end, and finishes when Boss is defeated
+  const gs = Engine.createGameState({ grade: 'G7', gameMode: 'timed20', timeLimitSeconds: 120 });
+  assert.equal(gs.endlessMode, true);
+  assert.equal(gs.timedMode, true);
+  assert.equal(gs.totalWaves, 0);
+  assert.equal(gs.waveDelay, 15.0);
+
+  // Simulate already past Wave 8 -> no premature Victory
+  gs.wave = 10;
+  gs.waveDelay = 0;
+  gs.spawnQueue = [];
+  gs.monsters = [];
+  Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.status, 'playing');
+  assert.equal(gs.wave, 11, 'Endless mode keeps advancing waves beyond Wave 8');
+
+  // Advance timer into Final Boss climax window (remaining <= 15% of 120s = 18s)
+  gs.timeRemaining = 17.5;
+  Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.finalBossSpawned, true);
+  assert.equal(gs.spawnQueue.length, 0);
+  const boss = gs.monsters.find((m) => m.isFinalTimedBoss);
+  assert.ok(boss, 'Chronos-Omega Final Boss should spawn near end of timer');
+
+  // Defeat the Final Boss -> ends the game cleanly with victory
+  boss.hp = 0;
+  gs.monsters = [];
+  Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.finalBossCleared, true);
+  assert.equal(gs.status, 'victory');
+
+  // 2. RoomManager longer thinking times (45s normal, 60s co-op) & Auto-save on timeout
+  const rm = new RoomManager();
+  const { room: coopRoom } = rm.createRoom({ code: 'COOP', grade: 'G8', teacherCoop: true, gameMode: 'timed20' });
+  assert.equal(coopRoom.turnDuration, 60);
+
+  const { room } = rm.createRoom({ code: 'AUTO', grade: 'G7', maxPlayers: 2, gameMode: 'timed20' });
+  assert.equal(room.turnDuration, 45);
+  const p1 = rm.joinRoom({ code: 'AUTO', nickname: '小美', grade: 'G7', socketId: 'sa1' }).player;
+  const p2 = rm.joinRoom({ code: 'AUTO', nickname: '阿明', grade: 'G7', socketId: 'sa2' }).player;
+  rm.setPlayerReady('AUTO', p1.id, true);
+  rm.setPlayerReady('AUTO', p2.id, true);
+
+  // p1 creates an uncommitted Scratch draft on T1 and does NOT press Apply
+  rm.savePendingDraft('AUTO', p1.id, {
+    turretId: 'T1',
+    blocks: [
+      { id: 'd_v', type: 'set_var', varName: 'damage', op: 'set', value: 28 },
+      { id: 'd_l', type: 'loop', loopMode: 'burst', count: 2 }
+    ]
+  });
+  assert.ok(room.pendingDrafts.T1, 'Pending draft should be inspectable by teacher before Apply');
+
+  // Tick timer to expiry -> auto-applies p1's T1 draft & rotates to p2
+  for (let i = 0; i < 910; i++) rm.tickAll(0.05);
+  assert.equal(room.activeTurnPlayerId, p2.id);
+  const t1 = room.game.turrets.find((t) => t.id === 'T1');
+  assert.equal(t1.active, true);
+  assert.equal(t1.damage, 28);
+  assert.equal(t1.loopMode, 'burst');
+  assert.equal(room.lastAutoSave.applied, true);
+
+  // Now p2 drafts an over-budget config on T2 -> preserves unfinished draft cleanly on timeout!
+  rm.savePendingDraft('AUTO', p2.id, {
+    turretId: 'T2',
+    blocks: [
+      { id: 'd_big', type: 'set_var', varName: 'damage', op: 'set', value: 90 },
+      { id: 'd_rate', type: 'set_var', varName: 'fire_rate', op: 'set', value: 4.0 }
+    ]
+  });
+  for (let i = 0; i < 910; i++) rm.tickAll(0.05);
+  assert.equal(room.activeTurnPlayerId, p1.id);
+  assert.equal(room.lastAutoSave.applied, false);
+  assert.ok(Array.isArray(room.savedDrafts[p2.id].T2));
+  assert.equal(room.savedDrafts[p2.id].T2[0].value, 90);
+
+  // 3. Student feedback submission visible in teacher snapshot
+  const fbRes = rm.submitFeedback('AUTO', p1.id, {
+    rating: 5,
+    favoriteConcept: 'loops',
+    funTags: ['迴圈連射爆打', '用函式省算力'],
+    comment: '希望能多一張雙路線地圖！'
+  });
+  assert.equal(fbRes.ok, true);
+  const allFb = rm.getTeacherFeedbacksSnapshot();
+  assert.equal(allFb.length, 1);
+  assert.equal(allFb[0].nickname, '小美');
+  assert.equal(allFb[0].comment, '希望能多一張雙路線地圖！');
 });
 
 

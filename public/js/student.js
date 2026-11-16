@@ -131,14 +131,96 @@
   const btnDeployTurret = document.getElementById('btn-deploy-turret');
   const codePreview = document.getElementById('code-preview');
 
+  let feedbackRating = 5;
+  const feedbackSelectedTags = new Set();
+  let feedbackSubmittedThisEnd = false;
+  let draftSyncTimer = null;
+  let lastSeenAutoSaveId = null;
+  let wasMyTurn = null;
+
   const gameoverModal = document.getElementById('gameover-modal');
   const gameoverTitle = document.getElementById('gameover-title');
   const gameoverDesc = document.getElementById('gameover-desc');
   const gameoverStats = document.getElementById('gameover-stats');
+  const feedbackStars = document.getElementById('feedback-stars');
+  const feedbackTagsWrap = document.getElementById('feedback-tags');
+  const feedbackConcept = document.getElementById('feedback-concept');
+  const feedbackComment = document.getElementById('feedback-comment');
+  const btnSubmitFeedback = document.getElementById('btn-submit-feedback');
+  const feedbackSubmittedBadge = document.getElementById('feedback-submitted-badge');
   const btnEndlessMode = document.getElementById('btn-endless-mode');
   const btnRestartGame = document.getElementById('btn-restart-game');
   const btnGameoverLeave = document.getElementById('btn-gameover-leave');
   const toastStack = document.getElementById('toast-stack');
+
+  function getLocalDraftKey(roomCode, turretId) {
+    return `ai_td_draft_${roomCode}_${turretId}`;
+  }
+
+  function persistDraftProgress(turretId = selectedTurretId, blocks = workspaceBlocks, immediate = false) {
+    if (!roomState || !roomState.code || !turretId || !Transpiler) return;
+    const cleanBlocks = Transpiler.sanitizeBlocks(cloneBlocks(blocks));
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(getLocalDraftKey(roomState.code, turretId), JSON.stringify(cleanBlocks));
+      }
+    } catch (_err) {
+      // Ignore storage quota errors
+    }
+
+    if (draftSyncTimer) {
+      clearTimeout(draftSyncTimer);
+      draftSyncTimer = null;
+    }
+    const send = () => {
+      draftSyncTimer = null;
+      if (!roomState || !myPlayerId) return;
+      socket.emit('student:sync_draft', { turretId, blocks: cleanBlocks });
+    };
+    if (immediate) {
+      send();
+    } else {
+      draftSyncTimer = setTimeout(send, 220);
+    }
+  }
+
+  function clearSavedDraftProgress(turretId) {
+    if (!roomState || !roomState.code || !turretId) return;
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(getLocalDraftKey(roomState.code, turretId));
+      }
+    } catch (_err) {
+      // Ignore
+    }
+  }
+
+  function readRestorableDraftForTurret(turret) {
+    if (!roomState || !turret) return null;
+    const serverTurretJson = JSON.stringify(Transpiler.sanitizeBlocks(cloneBlocks(turret.blocks || [])));
+    const serverSaved = roomState.savedDrafts && myPlayerId && roomState.savedDrafts[myPlayerId]
+      ? roomState.savedDrafts[myPlayerId][turret.id]
+      : null;
+    if (Array.isArray(serverSaved) && serverSaved.length > 0) {
+      const clean = Transpiler.sanitizeBlocks(cloneBlocks(serverSaved));
+      if (JSON.stringify(clean) !== serverTurretJson) return clean;
+    }
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const raw = localStorage.getItem(getLocalDraftKey(roomState.code, turret.id));
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const clean = Transpiler.sanitizeBlocks(cloneBlocks(parsed));
+            if (JSON.stringify(clean) !== serverTurretJson) return clean;
+          }
+        }
+      }
+    } catch (_err) {
+      // Ignore corrupt draft
+    }
+    return null;
+  }
 
   function showToast(message, durationMs = 3600) {
     const el = document.createElement('div');
@@ -337,6 +419,7 @@
     meta = await res.json();
     renderMonsterGuide();
     initSkillButtons();
+    initFeedbackForm();
 
     const params = new URLSearchParams(window.location.search);
     const urlRoom = params.get('room') ? params.get('room').toUpperCase() : '';
@@ -456,6 +539,12 @@
     lastFnListKey = '';
     lastSeenWave = null;
     lastGameOverStatus = null;
+    lastSeenAutoSaveId = null;
+    wasMyTurn = null;
+    if (draftSyncTimer) {
+      clearTimeout(draftSyncTimer);
+      draftSyncTimer = null;
+    }
     mapPickBlockId = null;
     knownAchievements.clear();
     knownBounties.clear();
@@ -502,6 +591,10 @@
 
   btnEndTurn.addEventListener('click', () => {
     setMapPickMode(null);
+    flushWorkspaceInputs();
+    if (dirtyDraft) {
+      persistDraftProgress(selectedTurretId, workspaceBlocks, true);
+    }
     socket.emit('student:end_turn', {}, (res) => {
       if (res && !res.ok && res.error) showToast(res.error);
       else dirtyDraft = false;
@@ -629,6 +722,58 @@
     });
   }
 
+  function initFeedbackForm() {
+    if (feedbackStars) {
+      const starBtns = feedbackStars.querySelectorAll('.star-btn');
+      starBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          feedbackRating = Number(btn.dataset.rating) || 5;
+          starBtns.forEach((b) => b.classList.toggle('active', Number(b.dataset.rating) === feedbackRating));
+        });
+      });
+    }
+    if (feedbackTagsWrap && meta && Array.isArray(meta.feedbackTags) && feedbackTagsWrap.childElementCount === 0) {
+      meta.feedbackTags.forEach((tag) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'fb-tag-btn';
+        b.textContent = tag;
+        b.addEventListener('click', () => {
+          if (feedbackSelectedTags.has(tag)) {
+            feedbackSelectedTags.delete(tag);
+            b.classList.remove('active');
+          } else {
+            feedbackSelectedTags.add(tag);
+            b.classList.add('active');
+          }
+        });
+        feedbackTagsWrap.appendChild(b);
+      });
+    }
+    if (btnSubmitFeedback) {
+      btnSubmitFeedback.addEventListener('click', () => {
+        if (!roomState || feedbackSubmittedThisEnd) return;
+        const payload = {
+          rating: feedbackRating,
+          favoriteConcept: feedbackConcept ? feedbackConcept.value : 'loops',
+          funTags: Array.from(feedbackSelectedTags),
+          comment: feedbackComment ? feedbackComment.value.trim() : ''
+        };
+        socket.emit('student:submit_feedback', payload, (res) => {
+          if (!res || !res.ok) {
+            showToast((res && res.error) || '送出回饋失敗');
+            return;
+          }
+          feedbackSubmittedThisEnd = true;
+          btnSubmitFeedback.disabled = true;
+          btnSubmitFeedback.textContent = '✅ 已送出回饋';
+          if (feedbackSubmittedBadge) feedbackSubmittedBadge.classList.remove('hidden');
+          showToast('📨 老師已經收到你的課後回饋表單囉！');
+        });
+      });
+    }
+  }
+
   function markDraftEdited(blockId, rebuildBlocks = false) {
     dirtyDraft = true;
     deployErrorMsg = '';
@@ -642,6 +787,7 @@
       lastRenderedBlocksKey = computeBlocksRenderKey(canEdit);
     }
     updateScratchPreview();
+    persistDraftProgress(selectedTurretId, workspaceBlocks, false);
   }
 
   function addPaletteBlock(paletteType, insertAtIndex = null) {
@@ -900,6 +1046,7 @@
       lastRenderedBlocksKey = computeBlocksRenderKey(canEdit);
     }
     updateScratchPreview();
+    persistDraftProgress(selectedTurretId, workspaceBlocks, false);
   }
 
   function renderWorkspaceBlocks(force = false) {
@@ -1348,7 +1495,14 @@
 
   function syncEditorFromServer(turret, force = false) {
     if (!turret) return;
-    const nextBlocks = Transpiler.sanitizeBlocks(cloneBlocks(turret.blocks || []));
+    let nextBlocks = Transpiler.sanitizeBlocks(cloneBlocks(turret.blocks || []));
+    if (!force && isMyTurn() && !dirtyDraft) {
+      const restored = readRestorableDraftForTurret(turret);
+      if (restored) {
+        nextBlocks = restored;
+        dirtyDraft = true;
+      }
+    }
     const sameBlocks = !force && JSON.stringify(nextBlocks) === JSON.stringify(workspaceBlocks);
     if (!sameBlocks) {
       workspaceBlocks = nextBlocks;
@@ -1378,12 +1532,14 @@
         deployInFlight = false;
         if (!res || !res.ok) {
           deployErrorMsg = (res && res.error) || '套用 Scratch 積木失敗';
+          persistDraftProgress(targetId, deployingBlocks, true);
           updateScratchPreview();
           showToast(deployErrorMsg, 4800);
           return;
         }
         dirtyDraft = false;
         deployErrorMsg = '';
+        clearSavedDraftProgress(targetId);
         if (res.turret && roomState && roomState.game && Array.isArray(roomState.game.turrets)) {
           const idx = roomState.game.turrets.findIndex((t) => t.id === targetId);
           if (idx !== -1) {
@@ -1791,7 +1947,16 @@
     hudRoomBadge.textContent = `房號 ${room.code}`;
     hudGradeBadge.textContent = room.gradeShort;
     hudGradeBadge.className = `badge ${room.grade === 'G7' ? 'badge-g7' : 'badge-g8'}`;
-    hudWave.textContent = g.endlessMode ? `🔥 無盡第 ${g.wave} 波` : `${g.wave} / ${g.totalWaves}`;
+    if (g.timedMode) {
+      const rem = Math.max(0, Math.round(g.timeRemaining || 0));
+      const mm = String(Math.floor(rem / 60)).padStart(2, '0');
+      const ss = String(rem % 60).padStart(2, '0');
+      hudWave.textContent = g.finalBossSpawned
+        ? `🚨 最終BOSS · 波${g.wave}`
+        : `♾️ 波${g.wave} · ⏱️ ${mm}:${ss}`;
+    } else {
+      hudWave.textContent = g.endlessMode ? `🔥 無盡第 ${g.wave} 波` : `${g.wave} / ${g.totalWaves}`;
+    }
     const hpPct = Math.max(0, Math.round((g.baseHp / g.baseMaxHp) * 100));
     hudHpFill.style.width = `${hpPct}%`;
     hudHpText.textContent = `${g.baseHp}/${g.baseMaxHp}`;
@@ -1814,11 +1979,38 @@
       teacherBanner.classList.add('hidden');
     }
 
+    if (room.lastAutoSave && room.lastAutoSave.id !== lastSeenAutoSaveId) {
+      lastSeenAutoSaveId = room.lastAutoSave.id;
+      if (room.lastAutoSave.playerId === myPlayerId) {
+        if (room.lastAutoSave.applied) {
+          clearSavedDraftProgress(room.lastAutoSave.turretId);
+          if (room.lastAutoSave.turretId === selectedTurretId) {
+            dirtyDraft = false;
+            lastRenderedBlocksKey = '';
+          }
+        }
+        showToast(room.lastAutoSave.message, 5200);
+      }
+    }
+
     const myTurn = isMyTurn();
+    if (wasMyTurn === true && !myTurn && dirtyDraft) {
+      flushWorkspaceInputs();
+      persistDraftProgress(selectedTurretId, workspaceBlocks, true);
+    }
+    wasMyTurn = myTurn;
+
     if (room.turnMode === 'turn' && room.activeTurnPlayerId !== lastActiveTurnId) {
       if (lastActiveTurnId !== null) sound.playTurnSwitch();
       lastActiveTurnId = room.activeTurnPlayerId;
-      if (!myTurn) dirtyDraft = false;
+      if (!myTurn) {
+        dirtyDraft = false;
+      } else {
+        const curT = g.turrets.find((t) => t.id === selectedTurretId) || g.turrets[0];
+        if (curT && readRestorableDraftForTurret(curT)) {
+          lastRenderedBlocksKey = '';
+        }
+      }
     }
 
     const mePlayer = room.players.find((p) => p.id === myPlayerId);
@@ -1909,13 +2101,24 @@
       lastGameOverStatus = g.status;
       const isWin = g.status === 'victory';
       const rankInfo = g.rankSummary || { rank: isWin ? 'S' : 'A', title: '🛡️ AI 防線指揮官' };
-      gameoverTitle.textContent = isWin ? '🏆 成功守住 AI 主基地！' : '💥 基地護盾被攻破了';
+      gameoverTitle.textContent = isWin
+        ? (g.timedMode ? '🏆 20分鐘終極 BOSS 討伐成功！' : '🏆 成功守住 AI 主基地！')
+        : '💥 基地護盾被攻破了';
       gameoverTitle.style.color = isWin ? 'var(--emerald)' : 'var(--rose)';
       gameoverDesc.textContent = isWin
-        ? `【${rankInfo.rank} 級評價 · ${rankInfo.title}】太強了！要繼續挑戰「無盡生存模式」刷新紀錄嗎？`
-        : `【${rankInfo.rank} 級戰績 · ${rankInfo.title}】差一點！點地圖把砲塔拉過去截擊、搭配懸賞金幣技能再戰！`;
+        ? (g.timedMode
+          ? `【${rankInfo.rank} 級評價 · ${rankInfo.title}】你們撐過重重怪物潮、成功迎戰最終 BOSS！別忘了填寫下方回饋表單給老師看喔～`
+          : `【${rankInfo.rank} 級評價 · ${rankInfo.title}】太強了！可以填寫下方回饋表單，或繼續挑戰「20分鐘無限生存模式」！`)
+        : `【${rankInfo.rank} 級戰績 · ${rankInfo.title}】差一點！點地圖把砲塔拉過去截擊、用迴圈＋函式省算力，也歡迎在下方寫下心得給老師！`;
 
-      btnEndlessMode.classList.toggle('hidden', !isWin);
+      btnEndlessMode.classList.toggle('hidden', !isWin || Boolean(g.timedMode));
+      feedbackSubmittedThisEnd = false;
+      if (btnSubmitFeedback) {
+        btnSubmitFeedback.disabled = false;
+        btnSubmitFeedback.textContent = '📨 送出回饋給老師';
+      }
+      if (feedbackSubmittedBadge) feedbackSubmittedBadge.classList.add('hidden');
+      if (feedbackComment) feedbackComment.value = '';
 
       const learnedCount = Object.values(g.conceptsLearned).filter(Boolean).length;
       const achCount = Array.isArray(g.achievements) ? g.achievements.length : 0;

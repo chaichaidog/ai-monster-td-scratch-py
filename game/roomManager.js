@@ -1,4 +1,5 @@
-const { GRADES, QUICK_TIPS } = require('./constants');
+const { GRADES, QUICK_TIPS, TIMED_ENDLESS_DURATION_SEC, FEEDBACK_TAGS } = require('./constants');
+const ScratchTranspiler = require('../public/js/scratchTranspiler');
 const {
   createGameState,
   advanceGameTick,
@@ -18,11 +19,12 @@ const {
   serializeGameState
 } = require('./engine');
 
-const TURN_DURATION_SECONDS = 25;
+const TURN_DURATION_SECONDS = 45;
 
 class RoomManager {
   constructor() {
     this.rooms = new Map();
+    this.feedbacks = [];
   }
 
   normalizeCode(code) {
@@ -42,11 +44,28 @@ class RoomManager {
     return fallback;
   }
 
-  createRoom({ code, name, grade = 'G7', maxPlayers = 2, difficulty = 'standard', maxWaves = 8, teacherCoop = false } = {}) {
+  createRoom({
+    code,
+    name,
+    grade = 'G7',
+    maxPlayers = 2,
+    difficulty = 'standard',
+    maxWaves = 8,
+    teacherCoop = false,
+    gameMode = 'classic',
+    timeLimitSeconds = TIMED_ENDLESS_DURATION_SEC,
+    turnDuration = null
+  } = {}) {
     const validGrade = grade === 'G8' ? 'G8' : 'G7';
     const isTeacherCoop = Boolean(teacherCoop);
     const validMaxPlayers = isTeacherCoop ? 2 : (Number(maxPlayers) === 1 ? 1 : 2);
     const validDifficulty = difficulty === 'challenge' ? 'challenge' : 'standard';
+    const validGameMode = gameMode === 'timed20' ? 'timed20' : 'classic';
+    const defaultTurnSec = isTeacherCoop ? 60 : TURN_DURATION_SECONDS;
+    const validTurnSec = turnDuration !== null && turnDuration !== undefined && Number(turnDuration) >= 10
+      ? Math.min(300, Math.round(Number(turnDuration)))
+      : defaultTurnSec;
+    const validTimeLimit = Math.max(60, Number(timeLimitSeconds) || TIMED_ENDLESS_DURATION_SEC);
     const roomCode = this.normalizeCode(code) || this.generateRoomCode(validGrade);
 
     if (roomCode.length < 2 || roomCode.length > 12) {
@@ -68,6 +87,8 @@ class RoomManager {
       grade: validGrade,
       maxPlayers: validMaxPlayers,
       teacherCoop: isTeacherCoop,
+      gameMode: validGameMode,
+      timeLimitSeconds: validTimeLimit,
       turnMode: validMaxPlayers === 1 ? 'solo' : 'turn',
       difficulty: validDifficulty,
       maxWaves: Math.max(4, Math.min(8, Number(maxWaves) || 8)),
@@ -75,13 +96,18 @@ class RoomManager {
       players: [],
       activeTurnPlayerId: null,
       turnNumber: 1,
-      turnDuration: isTeacherCoop ? 35 : TURN_DURATION_SECONDS,
-      turnTimeLeft: isTeacherCoop ? 35 : TURN_DURATION_SECONDS,
+      turnDuration: validTurnSec,
+      turnTimeLeft: validTurnSec,
       game: createGameState({
         grade: validGrade,
         maxWaves: Number(maxWaves) || 8,
-        difficulty: validDifficulty
+        difficulty: validDifficulty,
+        gameMode: validGameMode,
+        timeLimitSeconds: validTimeLimit
       }),
+      pendingDrafts: {},
+      savedDrafts: {},
+      feedbacks: [],
       actionLog: [],
       teacherBanner: null,
       createdAt: Date.now(),
@@ -90,7 +116,8 @@ class RoomManager {
 
     this.rooms.set(roomCode, room);
     const modeNote = isTeacherCoop ? '師生同樂雙人' : (validMaxPlayers === 1 ? '單人' : '雙人輪流');
-    this.logAction(room, '系統', `老師已建立 ${GRADES[validGrade].shortLabel} ${modeNote}房間 (${roomCode})`);
+    const ruleNote = validGameMode === 'timed20' ? ' · 20分鐘無限挑戰' : '';
+    this.logAction(room, '系統', `老師已建立 ${GRADES[validGrade].shortLabel} ${modeNote}${ruleNote}房間 (${roomCode})`);
     return { ok: true, room };
   }
 
@@ -100,14 +127,14 @@ class RoomManager {
       grade: 'G7',
       maxPlayers: 2,
       difficulty: 'standard',
-      maxWaves: 8
+      gameMode: 'timed20'
     });
     const g8 = this.createRoom({
       name: '國二單人挑戰戰隊',
       grade: 'G8',
       maxPlayers: 1,
       difficulty: 'challenge',
-      maxWaves: 8
+      gameMode: 'timed20'
     });
     return {
       ok: g7.ok && g8.ok,
@@ -121,7 +148,7 @@ class RoomManager {
       grade: 'G7',
       maxPlayers: 2,
       difficulty: 'standard',
-      maxWaves: 8
+      gameMode: 'timed20'
     });
     const g8 = this.createRoom({
       name: '國二師生同樂雙人戰隊',
@@ -129,7 +156,7 @@ class RoomManager {
       maxPlayers: 2,
       teacherCoop: true,
       difficulty: 'standard',
-      maxWaves: 8
+      gameMode: 'timed20'
     });
     return {
       ok: g7.ok && g8.ok,
@@ -144,10 +171,10 @@ class RoomManager {
     room.maxPlayers = 2;
     room.turnMode = 'turn';
     room.teacherCoop = true;
-    if (room.turnDuration < 35) {
-      room.turnDuration = 35;
+    if (room.turnDuration < 60) {
+      room.turnDuration = 60;
       if (room.phase === 'lobby' || upgradedFromSolo) {
-        room.turnTimeLeft = 35;
+        room.turnTimeLeft = 60;
       }
     }
     this.logAction(
@@ -407,12 +434,155 @@ class RoomManager {
     }
     if (!res.ok) return res;
 
+    if (room.pendingDrafts && room.pendingDrafts[turretId]) {
+      delete room.pendingDrafts[turretId];
+    }
+    if (room.savedDrafts && room.savedDrafts[playerId] && room.savedDrafts[playerId][turretId]) {
+      delete room.savedDrafts[playerId][turretId];
+    }
+
     this.logAction(
       room,
       player.nickname,
       `積木調整 ${res.turret.name}（武器=${res.turret.weapon}, 位置=(${res.turret.targetX},${res.turret.targetY}), damage=${res.turret.damage}, rate=${res.turret.fireRate}, loop=${res.turret.loopMode}×${res.turret.loopCount}）`
     );
     return { ok: true, room, turret: res.turret };
+  }
+
+  savePendingDraft(code, playerId, { turretId, blocks } = {}) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效的玩家' };
+    const turret = room.game && room.game.turrets.find((t) => t.id === turretId);
+    if (!turret) return { ok: false, error: '找不到指定的砲塔' };
+
+    const cleanBlocks = ScratchTranspiler.sanitizeBlocks(Array.isArray(blocks) ? blocks : []);
+    if (!room.pendingDrafts) room.pendingDrafts = {};
+    if (!room.savedDrafts) room.savedDrafts = {};
+    if (!room.savedDrafts[playerId]) room.savedDrafts[playerId] = {};
+
+    const sameAsActive = JSON.stringify(cleanBlocks) === JSON.stringify(turret.blocks || []);
+    if (sameAsActive) {
+      delete room.pendingDrafts[turretId];
+      delete room.savedDrafts[playerId][turretId];
+    } else {
+      room.pendingDrafts[turretId] = {
+        turretId,
+        playerId,
+        nickname: player.nickname,
+        blocks: cleanBlocks,
+        updatedAt: Date.now()
+      };
+      room.savedDrafts[playerId][turretId] = cleanBlocks;
+    }
+    return { ok: true, room };
+  }
+
+  flushPendingDraftsForPlayer(room, playerId, reasonLabel = '時間到') {
+    if (!room || !playerId || !room.pendingDrafts) return [];
+    const actor = room.players.find((p) => p.id === playerId);
+    const actorName = actor ? actor.nickname : '學生';
+    const results = [];
+
+    for (const [turretId, draft] of Object.entries(room.pendingDrafts)) {
+      if (!draft || draft.playerId !== playerId) continue;
+      if (!Array.isArray(draft.blocks) || draft.blocks.length === 0) continue;
+      const turret = room.game.turrets.find((t) => t.id === turretId);
+      if (!turret) continue;
+      if (JSON.stringify(draft.blocks) === JSON.stringify(turret.blocks || [])) {
+        delete room.pendingDrafts[turretId];
+        continue;
+      }
+
+      const applyRes = updateTurretFromBlocks(room.game, turretId, draft.blocks);
+      if (applyRes.ok) {
+        delete room.pendingDrafts[turretId];
+        if (room.savedDrafts && room.savedDrafts[playerId]) {
+          delete room.savedDrafts[playerId][turretId];
+        }
+        room.lastAutoSave = {
+          id: `${Date.now()}_${turretId}`,
+          playerId,
+          turretId,
+          applied: true,
+          message: `💾 ${reasonLabel}，已自動存檔並套用「${turret.name}」的積木！`
+        };
+        this.logAction(room, '💾 自動存檔', `${reasonLabel}，自動套用並保存「${actorName}」在 ${turret.name} 的積木`);
+        results.push({ turretId, applied: true });
+      } else {
+        if (!room.savedDrafts) room.savedDrafts = {};
+        if (!room.savedDrafts[playerId]) room.savedDrafts[playerId] = {};
+        room.savedDrafts[playerId][turretId] = draft.blocks;
+        room.lastAutoSave = {
+          id: `${Date.now()}_${turretId}`,
+          playerId,
+          turretId,
+          applied: false,
+          message: `💾 ${reasonLabel}，「${turret.name}」草稿因（${applyRes.error}）先暫存起來，下次輪到你會自動恢復！`
+        };
+        this.logAction(room, '💾 自動存檔', `${reasonLabel}，「${actorName}」在 ${turret.name} 的未完成草稿已安全暫存`);
+        results.push({ turretId, applied: false, error: applyRes.error });
+      }
+    }
+    return results;
+  }
+
+  submitFeedback(code, playerId, { rating = 5, favoriteConcept = 'none', funTags = [], comment = '' } = {}) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '找不到玩家資料' };
+
+    const cleanRating = Math.max(1, Math.min(5, Math.round(Number(rating) || 5)));
+    const allowedConcepts = ['variables', 'conditionals', 'loops', 'functions', 'none'];
+    const cleanConcept = allowedConcepts.includes(favoriteConcept) ? favoriteConcept : 'none';
+    const cleanTags = Array.isArray(funTags)
+      ? funTags.map((t) => String(t).trim()).filter((t) => FEEDBACK_TAGS.includes(t) || t.length <= 20).slice(0, 6)
+      : [];
+    const cleanComment = String(comment || '').trim().slice(0, 300);
+
+    const entry = {
+      id: `fb_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+      roomCode: room.code,
+      roomName: room.name,
+      playerId: player.id,
+      nickname: player.nickname,
+      grade: room.grade,
+      gradeShort: GRADES[room.grade].shortLabel,
+      isTeacher: Boolean(player.isTeacher),
+      rating: cleanRating,
+      favoriteConcept: cleanConcept,
+      funTags: cleanTags,
+      comment: cleanComment,
+      waveReached: room.game.wave,
+      score: room.game.score,
+      outcome: room.game.status,
+      submittedAt: new Date().toLocaleTimeString('zh-TW', { hour12: false })
+    };
+
+    if (!Array.isArray(room.feedbacks)) room.feedbacks = [];
+    const existingIdx = room.feedbacks.findIndex((f) => f.playerId === player.id);
+    if (existingIdx !== -1) {
+      room.feedbacks[existingIdx] = entry;
+    } else {
+      room.feedbacks.unshift(entry);
+    }
+
+    const globalIdx = this.feedbacks.findIndex((f) => f.roomCode === room.code && f.playerId === player.id);
+    if (globalIdx !== -1) {
+      this.feedbacks[globalIdx] = entry;
+    } else {
+      this.feedbacks.unshift(entry);
+    }
+    if (this.feedbacks.length > 100) this.feedbacks.length = 100;
+
+    this.logAction(room, player.nickname, `送出了課後回饋表單（${cleanRating}⭐）`);
+    return { ok: true, feedback: entry, room };
+  }
+
+  getTeacherFeedbacksSnapshot() {
+    return this.feedbacks.slice(0, 100);
   }
 
   handleSaveFunction(code, playerId, payload) {
@@ -494,6 +664,7 @@ class RoomManager {
       return { ok: false, error: '隊友目前離線中' };
     }
 
+    this.flushPendingDraftsForPlayer(room, playerId, '交棒換手');
     room.activeTurnPlayerId = nextPlayer.id;
     room.turnNumber += 1;
     room.turnTimeLeft = room.turnDuration;
@@ -548,8 +719,13 @@ class RoomManager {
     room.game = createGameState({
       grade: room.grade,
       maxWaves: room.maxWaves,
-      difficulty: room.difficulty
+      difficulty: room.difficulty,
+      gameMode: room.gameMode || 'classic',
+      timeLimitSeconds: room.timeLimitSeconds || TIMED_ENDLESS_DURATION_SEC
     });
+    room.pendingDrafts = {};
+    room.savedDrafts = {};
+    room.lastAutoSave = null;
     room.phase = room.players.length > 0 ? 'playing' : 'lobby';
     if (room.phase === 'playing') {
       room.game.status = 'playing';
@@ -601,7 +777,7 @@ class RoomManager {
     if (!res.ok) return res;
     room.teacherBanner = {
       id: Date.now(),
-      text: '🎁 老師驚喜空投！黃金寶藏史萊姆出現啦，快集火賺 55 金幣！',
+      text: '🎁 老師驚喜空投！黃金寶藏史萊姆出現啦，快集火賺 35 金幣！',
       time: new Date().toLocaleTimeString('zh-TW', { hour12: false })
     };
     this.logAction(room, '👩‍🏫 老師驚喜', '空投了一隻黃金寶藏史萊姆');
@@ -620,6 +796,10 @@ class RoomManager {
         if (connectedPlayers.length >= 2) {
           room.turnTimeLeft -= dt;
           if (room.turnTimeLeft <= 0) {
+            const prevPlayerId = room.activeTurnPlayerId;
+            if (prevPlayerId) {
+              this.flushPendingDraftsForPlayer(room, prevPlayerId, '回合時間到');
+            }
             const next = connectedPlayers.find((p) => p.id !== room.activeTurnPlayerId) || connectedPlayers[0];
             if (next && next.id !== room.activeTurnPlayerId) {
               room.activeTurnPlayerId = next.id;
@@ -647,6 +827,8 @@ class RoomManager {
       gradeShort: GRADES[room.grade].shortLabel,
       maxPlayers: room.maxPlayers,
       teacherCoop: Boolean(room.teacherCoop),
+      gameMode: room.gameMode || 'classic',
+      timeLimitSeconds: room.timeLimitSeconds || TIMED_ENDLESS_DURATION_SEC,
       turnMode: room.turnMode,
       difficulty: room.difficulty,
       maxWaves: room.maxWaves,
@@ -666,6 +848,10 @@ class RoomManager {
       turnDuration: room.turnDuration,
       turnTimeLeft: Math.max(0, Math.ceil(room.turnTimeLeft)),
       teacherBanner: room.teacherBanner,
+      pendingDrafts: room.pendingDrafts || {},
+      savedDrafts: room.savedDrafts || {},
+      lastAutoSave: room.lastAutoSave || null,
+      feedbacks: Array.isArray(room.feedbacks) ? room.feedbacks : [],
       actionLog: room.actionLog.slice(0, 20),
       quickTips: QUICK_TIPS,
       game: includeFullGame ? serializeGameState(room.game) : undefined

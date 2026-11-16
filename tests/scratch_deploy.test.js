@@ -601,6 +601,39 @@ test('Socket.IO teacher co-op setup, PIN verification, and teacher + G8 turn pla
     });
     assert.equal(tchDeploy.ok, true);
     assert.equal(tchDeploy.turret.weapon, 'frost');
+
+    // Student syncs live Scratch draft -> Teacher sees blocks & code snapshot, then student sends feedback
+    const latestRoomsPromise = new Promise((resolve) => {
+      teacherDashSocket.on('teacher:rooms', (rooms) => {
+        const found = rooms.find((r) => r.code === g8Coop.code);
+        if (found && found.pendingDrafts && found.pendingDrafts.T3) resolve(found);
+      });
+    });
+    const draftAck = await g8StudentSocket.emitAsync('student:sync_draft', {
+      turretId: 'T3',
+      blocks: [
+        { id: 'draft_w', type: 'set_weapon', weapon: 'chain' },
+        { id: 'draft_l', type: 'loop', loopMode: 'burst', count: 2 }
+      ]
+    });
+    assert.equal(draftAck.ok, true);
+    const teacherSeenRoom = await latestRoomsPromise;
+    assert.equal(teacherSeenRoom.pendingDrafts.T3.blocks[0].weapon, 'chain');
+
+    const feedbackPromise = new Promise((resolve) => {
+      teacherDashSocket.on('teacher:feedbacks', (list) => {
+        if (Array.isArray(list) && list.some((f) => f.nickname === '國二孤單生')) resolve(list);
+      });
+    });
+    const fbAck = await g8StudentSocket.emitAsync('student:submit_feedback', {
+      rating: 5,
+      favoriteConcept: 'functions',
+      funTags: ['雙人／師生合作'],
+      comment: '老師陪玩超棒！'
+    });
+    assert.equal(fbAck.ok, true);
+    const seenFeedbacks = await feedbackPromise;
+    assert.equal(seenFeedbacks[0].comment, '老師陪玩超棒！');
   } finally {
     g7SpoofSocket.close();
     g8StudentSocket.close();

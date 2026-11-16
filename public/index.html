@@ -401,12 +401,59 @@
 
   <!-- Game Over Modal -->
   <div id="gameover-modal" class="modal-backdrop hidden">
-    <div class="modal-card" style="max-width: 540px; text-align: center;">
+    <div class="modal-card" style="max-width: 620px; text-align: center;">
       <h2 id="gameover-title" style="margin-top: 0; font-size: 1.8rem;">防線勝利！</h2>
       <p id="gameover-desc" style="color: var(--text-muted);"></p>
-      <div id="gameover-stats" class="concept-cards" style="text-align: left; margin: 16px 0;"></div>
+      <div id="gameover-stats" class="concept-cards" style="text-align: left; margin: 14px 0;"></div>
+
+      <!-- Student Feedback Form -->
+      <div id="feedback-form-box" class="feedback-form-box">
+        <div style="font-weight: 800; font-size: 0.96rem; color: #fde68a; margin-bottom: 4px;">
+          📝 課後心得與回饋表單（老師可以直接在控制台看到你寫的內容！）
+        </div>
+        <div class="form-label" style="margin-bottom: 2px; font-size: 0.8rem;">1. 這次用 Scratch 積木寫砲塔好玩嗎？（點選星星）</div>
+        <div id="feedback-stars" class="star-picker">
+          <button type="button" class="star-btn" data-rating="1">⭐ 1</button>
+          <button type="button" class="star-btn" data-rating="2">⭐⭐ 2</button>
+          <button type="button" class="star-btn" data-rating="3">⭐⭐⭐ 3</button>
+          <button type="button" class="star-btn" data-rating="4">⭐⭐⭐⭐ 4</button>
+          <button type="button" class="star-btn active" data-rating="5">⭐⭐⭐⭐⭐ 5</button>
+        </div>
+
+        <div class="form-label" style="margin-bottom: 2px; font-size: 0.8rem;">2. 最喜歡的部分（可複選）：</div>
+        <div id="feedback-tags" class="fb-tag-row"></div>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label class="form-label" for="feedback-concept" style="font-size: 0.8rem;">3. 今天最有收穫／看懂的程式概念是？</label>
+          <select id="feedback-concept" class="select" style="padding: 7px 10px; font-size: 0.85rem;">
+            <option value="loops">🔁 重複迴圈 (for 連發 / 掃描多隻怪)</option>
+            <option value="variables">📦 變數 (damage = / += 調整數值)</option>
+            <option value="conditionals">🔀 條件判斷 (if 針對護盾/BOSS優先打)</option>
+            <option value="functions">🧩 函式共用 (def 省算力多塔同步升級)</option>
+            <option value="none">🤔 還想再多練習幾次！</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label class="form-label" for="feedback-comment" style="font-size: 0.8rem;">4. 想對老師說的話（哪關太難、或想要甚麼新玩法？）：</label>
+          <textarea
+            id="feedback-comment"
+            class="input"
+            rows="2"
+            maxlength="300"
+            placeholder="例如：希望多一張地圖！或是哪個積木我覺得超有趣..."
+            style="resize: vertical; font-family: inherit; padding: 8px 10px;"
+          ></textarea>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <button id="btn-submit-feedback" class="btn btn-amber btn-sm" type="button">📨 送出回饋給老師</button>
+          <span id="feedback-submitted-badge" class="badge badge-g7 hidden">✅ 已送出！老師已經看得到囉</span>
+        </div>
+      </div>
+
       <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
-        <button id="btn-endless-mode" class="btn btn-emerald hidden" type="button">🔥 繼續挑戰無盡模式！</button>
+        <button id="btn-endless-mode" class="btn btn-emerald hidden" type="button">♾️ 繼續挑戰無限生存（至20分鐘終極BOSS）</button>
         <button id="btn-restart-game" class="btn btn-primary" type="button">🔄 重新挑戰</button>
         <button id="btn-gameover-leave" class="btn" type="button">返回首頁</button>
       </div>

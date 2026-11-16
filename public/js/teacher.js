@@ -5,6 +5,8 @@
   let roomsSnapshot = [];
   let spectatorCode = null;
   let specRenderer = null;
+  let lastSpecTurretsKey = '';
+  let feedbacksSnapshot = [];
   const miniRenderers = new Map(); // roomCode -> { renderer, canvas, card }
 
   const viewLogin = document.getElementById('view-teacher-login');
@@ -22,11 +24,15 @@
   const createGrade = document.getElementById('create-grade');
   const createMaxPlayers = document.getElementById('create-max-players');
   const createDifficulty = document.getElementById('create-difficulty');
+  const createGameMode = document.getElementById('create-game-mode');
+  const createTurnDuration = document.getElementById('create-turn-duration');
 
   const statG7Count = document.getElementById('stat-g7-count');
   const statG8Count = document.getElementById('stat-g8-count');
   const roomsG7 = document.getElementById('rooms-g7');
   const roomsG8 = document.getElementById('rooms-g8');
+  const teacherFeedbackList = document.getElementById('teacher-feedback-list');
+  const teacherFeedbackCount = document.getElementById('teacher-feedback-count');
 
   const spectatorModal = document.getElementById('spectator-modal');
   const specGradeBadge = document.getElementById('spec-grade-badge');
@@ -193,7 +199,9 @@
         grade: createGrade.value,
         maxPlayers: isTeacherCoop ? 2 : Number(createMaxPlayers.value),
         teacherCoop: isTeacherCoop,
-        difficulty: createDifficulty.value
+        difficulty: createDifficulty.value,
+        gameMode: createGameMode ? createGameMode.value : 'timed20',
+        turnDuration: createTurnDuration ? Number(createTurnDuration.value) : 60
       },
       (res) => {
         if (!res || !res.ok) {
@@ -215,11 +223,23 @@
     }
   }
 
+  function formatMMSS(sec) {
+    const s = Math.max(0, Math.round(Number(sec) || 0));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+  }
+
   function statusLabel(room) {
     if (room.phase === 'lobby') return '等候學生準備';
     if (room.game.status === 'paused') return '⏸ 暫停中';
     if (room.game.status === 'victory') return '🏆 守備勝利';
     if (room.game.status === 'defeat') return '💥 防線失守';
+    if (room.game.timedMode) {
+      const bossTag = room.game.finalBossSpawned ? '🚨終極BOSS!' : `⏳${formatMMSS(room.game.timeRemaining)}`;
+      return `♾️ 第 ${room.game.wave} 波 · ${bossTag}`;
+    }
+    if (room.game.endlessMode) return `🔥 無盡第 ${room.game.wave} 波`;
     return `⚔️ 第 ${room.game.wave}/${room.game.totalWaves} 波戰鬥中`;
   }
 
@@ -491,6 +511,7 @@
 
   function openSpectator(code) {
     spectatorCode = code;
+    lastSpecTurretsKey = '';
     const room = roomsSnapshot.find((r) => r.code === code);
     if (!room) return;
     if (!specRenderer && meta) {
@@ -503,11 +524,137 @@
 
   function closeSpectator() {
     spectatorCode = null;
+    lastSpecTurretsKey = '';
     spectatorModal.classList.add('hidden');
     if (specRenderer) {
       specRenderer.stop();
       specRenderer = null;
     }
+  }
+
+  function formatBlockStepForTeacher(b, fns = []) {
+    if (!b) return '';
+    if (b.type === 'move_to') return `📍 移動(${b.x}, ${b.y})`;
+    if (b.type === 'patrol') return `🛸 巡邏(${b.axis}±${b.distance})`;
+    if (b.type === 'set_weapon') {
+      const wShort = (meta && meta.weapons && meta.weapons[b.weapon] && meta.weapons[b.weapon].short) || b.weapon;
+      return `⚡ 武器:${wShort}`;
+    }
+    if (b.type === 'set_var') {
+      const op = b.op === 'add' ? '+=' : '=';
+      return `📦 ${b.varName} ${op} ${b.value}`;
+    }
+    if (b.type === 'if_else') {
+      const cLabel = (meta && meta.conditionOptions && meta.conditionOptions[b.cond] && meta.conditionOptions[b.cond].codeExpr) || b.cond;
+      const logicStr = b.logic && b.logic !== 'none' ? ` ${b.logic} ...` : '';
+      return `🔀 如果 ${cLabel}${logicStr}`;
+    }
+    if (b.type === 'loop') {
+      return b.loopMode === 'multi' ? `📡 掃描${b.count}隻` : `🔁 連發${b.count}次`;
+    }
+    if (b.type === 'call_fn') {
+      const matched = (fns || []).find((f) => f.id === b.fnId || f.name === b.fnId);
+      const fname = matched ? (matched.label || matched.name) : b.fnId;
+      return `🧩 呼叫 ${fname}()`;
+    }
+    return String(b.type || '積木');
+  }
+
+  function renderBlockListRow(blocks, fns, emptyText) {
+    const wrap = document.createElement('div');
+    wrap.className = 'teacher-block-chips';
+    if (!Array.isArray(blocks) || blocks.length === 0) {
+      const empty = document.createElement('span');
+      empty.style.fontSize = '0.76rem';
+      empty.style.color = 'var(--text-dim)';
+      empty.textContent = emptyText;
+      wrap.appendChild(empty);
+      return wrap;
+    }
+    blocks.forEach((b, idx) => {
+      const chip = document.createElement('span');
+      chip.className = 'teacher-block-chip';
+      chip.textContent = `${idx + 1}. ${formatBlockStepForTeacher(b, fns)}`;
+      wrap.appendChild(chip);
+    });
+    return wrap;
+  }
+
+  function renderFeedbackWall(feedbacks) {
+    if (!teacherFeedbackList || !teacherFeedbackCount) return;
+    const list = Array.isArray(feedbacks) ? feedbacks : [];
+    teacherFeedbackCount.textContent = `${list.length} 份回饋`;
+    teacherFeedbackList.innerHTML = '';
+
+    if (list.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-placeholder';
+      empty.style.color = 'var(--text-dim)';
+      empty.style.fontSize = '0.88rem';
+      empty.style.padding = '8px 0';
+      empty.textContent = '尚無學生送出回饋表單（本局結束後學生畫面會自動跳出填寫表單）';
+      teacherFeedbackList.appendChild(empty);
+      return;
+    }
+
+    const conceptMap = {
+      variables: '📦 變數 (=/+=)',
+      conditionals: '🔀 條件 (if/else)',
+      loops: '🔁 迴圈 (for)',
+      functions: '🧩 函式 (def)',
+      none: '還想多練習'
+    };
+
+    list.forEach((fb) => {
+      const card = document.createElement('div');
+      card.className = 'teacher-feedback-card';
+
+      const head = document.createElement('div');
+      head.style.display = 'flex';
+      head.style.justifyContent = 'space-between';
+      head.style.alignItems = 'center';
+      head.style.gap = '6px';
+      const who = document.createElement('strong');
+      who.textContent = `${fb.isTeacher ? '👩‍🏫 ' : ''}${fb.nickname}`;
+      const badge = document.createElement('span');
+      badge.className = `badge ${fb.grade === 'G8' ? 'badge-g8' : 'badge-g7'}`;
+      badge.textContent = `${fb.gradeShort || fb.grade} · 房${fb.roomCode}`;
+      head.appendChild(who);
+      head.appendChild(badge);
+
+      const ratingLine = document.createElement('div');
+      ratingLine.style.fontSize = '0.84rem';
+      ratingLine.style.margin = '6px 0';
+      ratingLine.style.color = '#fde047';
+      ratingLine.textContent = `${'★'.repeat(fb.rating || 5)}${'☆'.repeat(Math.max(0, 5 - (fb.rating || 5)))} (${fb.rating}/5) · 最懂：${conceptMap[fb.favoriteConcept] || '未填'} · ${fb.submittedAt || ''}`;
+
+      card.appendChild(head);
+      card.appendChild(ratingLine);
+
+      if (Array.isArray(fb.funTags) && fb.funTags.length > 0) {
+        const tagsWrap = document.createElement('div');
+        tagsWrap.className = 'teacher-block-chips';
+        tagsWrap.style.marginBottom = '6px';
+        fb.funTags.forEach((tag) => {
+          const sp = document.createElement('span');
+          sp.className = 'teacher-block-chip';
+          sp.textContent = tag;
+          tagsWrap.appendChild(sp);
+        });
+        card.appendChild(tagsWrap);
+      }
+
+      const commentEl = document.createElement('div');
+      commentEl.style.fontSize = '0.84rem';
+      commentEl.style.color = '#e2e8f0';
+      commentEl.style.background = 'rgba(2, 6, 23, 0.45)';
+      commentEl.style.padding = '7px 9px';
+      commentEl.style.borderRadius = '6px';
+      commentEl.textContent = fb.comment ? `💬 「${fb.comment}」` : '💬 （未填寫文字留言）';
+      card.appendChild(commentEl);
+
+      teacherFeedbackList.appendChild(card);
+    });
   }
 
   function updateSpectatorModal(room) {
@@ -523,7 +670,9 @@
 
     specStatsRow.innerHTML = '';
     const stats = [
-      room.game.endlessMode ? `🔥 無盡第 ${room.game.wave} 波` : `波數 ${room.game.wave}/${room.game.totalWaves}`,
+      room.game.timedMode
+        ? `♾️ 第 ${room.game.wave} 波 · 剩餘 ${formatMMSS(room.game.timeRemaining)}`
+        : (room.game.endlessMode ? `🔥 無盡第 ${room.game.wave} 波` : `波數 ${room.game.wave}/${room.game.totalWaves}`),
       `基地 HP ${room.game.baseHp}/${room.game.baseMaxHp}`,
       `算力 ${room.game.computeUsed}/${room.game.computeBudget}`,
       `金幣 🪙 ${room.game.coins || 0}`,
@@ -537,28 +686,99 @@
       specStatsRow.appendChild(b);
     });
 
-    specTurretsList.innerHTML = '';
-    room.game.turrets.forEach((t) => {
-      const row = document.createElement('div');
-      row.className = 'fn-item';
-      const left = document.createElement('div');
-      const strong = document.createElement('strong');
-      const wShort = (meta.weapons && meta.weapons[t.weapon] && meta.weapons[t.weapon].short) || t.weapon || 'laser';
-      strong.textContent = `${t.name} [${wShort}]`;
-      const metaLine = document.createElement('div');
-      metaLine.style.fontSize = '0.78rem';
-      metaLine.style.color = 'var(--text-muted)';
-      const condName = (meta.conditionOptions[t.conditionType] && meta.conditionOptions[t.conditionType].codeExpr) || t.conditionType;
-      const moveStr = t.patrolAxis && t.patrolAxis !== 'none'
-        ? `patrol(${t.patrolAxis}±${t.patrolDist})`
-        : `pos(${t.targetX},${t.targetY})`;
-      const fnStr = t.boundFunctionName ? ` · def ${t.boundFunctionName}()` : '';
-      metaLine.textContent = `weapon=${t.weapon}, ${moveStr}, dmg=${t.damage}, rate=${t.fireRate}, if=${condName}, loop=${t.loopMode}×${t.loopCount}${fnStr}`;
-      left.appendChild(strong);
-      left.appendChild(metaLine);
-      row.appendChild(left);
-      specTurretsList.appendChild(row);
+    const draftsMap = room.pendingDrafts || {};
+    const turretsSig = JSON.stringify({
+      t: room.game.turrets.map((t) => ({
+        id: t.id, active: t.active, ammo: t.ammoRemaining, cost: t.cost,
+        blocks: t.blocks, code: t.code, loop: t.loopMode
+      })),
+      d: draftsMap
     });
+
+    if (turretsSig !== lastSpecTurretsKey) {
+      lastSpecTurretsKey = turretsSig;
+      specTurretsList.innerHTML = '';
+      const Transpiler = window.ScratchTranspiler;
+
+      room.game.turrets.forEach((t) => {
+        const card = document.createElement('div');
+        card.className = 'teacher-turret-code-card';
+
+        const headerRow = document.createElement('div');
+        headerRow.style.display = 'flex';
+        headerRow.style.justifyContent = 'space-between';
+        headerRow.style.alignItems = 'center';
+        headerRow.style.flexWrap = 'wrap';
+        headerRow.style.gap = '6px';
+
+        const strong = document.createElement('strong');
+        const wShort = (meta.weapons && meta.weapons[t.weapon] && meta.weapons[t.weapon].short) || t.weapon || '雷射';
+        strong.textContent = `${t.name} [${wShort}] · ⚡${t.cost}`;
+
+        const statusBadge = document.createElement('span');
+        if (t.active === false) {
+          statusBadge.className = 'badge';
+          statusBadge.textContent = '💤 空積木未啟動';
+        } else if (t.ammoRemaining === 0) {
+          statusBadge.className = 'badge badge-amber';
+          statusBadge.textContent = '🔁 缺迴圈已停火（打完3發）';
+        } else if (t.ammoRemaining > 0) {
+          statusBadge.className = 'badge badge-amber';
+          statusBadge.textContent = `⏳ 試射點放餘 ${t.ammoRemaining} 發`;
+        } else {
+          statusBadge.className = 'badge badge-g7';
+          statusBadge.textContent = '✅ 迴圈連發運作中';
+        }
+        headerRow.appendChild(strong);
+        headerRow.appendChild(statusBadge);
+        card.appendChild(headerRow);
+
+        const blkTitle = document.createElement('div');
+        blkTitle.style.fontSize = '0.75rem';
+        blkTitle.style.color = '#7dd3fc';
+        blkTitle.textContent = '🧱 已套用 Scratch 積木順序：';
+        card.appendChild(blkTitle);
+        card.appendChild(renderBlockListRow(t.blocks, room.game.functions, '（尚未放入積木）'));
+
+        const pyPre = document.createElement('pre');
+        pyPre.className = 'teacher-code-pre';
+        pyPre.textContent = t.code || '# 尚未產生程式碼';
+        card.appendChild(pyPre);
+
+        if (t.active && t.loopMode === 'none') {
+          const warn = document.createElement('div');
+          warn.style.fontSize = '0.75rem';
+          warn.style.color = '#fbbf24';
+          warn.textContent = '💡 給老師除錯提醒：這座砲塔沒有放「🩷 重複迴圈」，所以射完 3 發就會停火！';
+          card.appendChild(warn);
+        }
+
+        const draft = draftsMap[t.id];
+        if (draft && Array.isArray(draft.blocks)) {
+          const draftBox = document.createElement('div');
+          draftBox.className = 'teacher-draft-box';
+          const dLabel = document.createElement('div');
+          dLabel.style.fontSize = '0.76rem';
+          dLabel.style.color = '#fde68a';
+          dLabel.style.fontWeight = '700';
+          dLabel.style.marginBottom = '4px';
+          dLabel.textContent = `✏️ ${draft.nickname} 工作區目前正在拼的草稿（尚未按套用）：`;
+          draftBox.appendChild(dLabel);
+          draftBox.appendChild(renderBlockListRow(draft.blocks, room.game.functions, '（已清空）'));
+
+          if (Transpiler) {
+            const draftPre = document.createElement('pre');
+            draftPre.className = 'teacher-code-pre';
+            draftPre.style.marginTop = '5px';
+            draftPre.textContent = Transpiler.blocksToPlainPython(draft.blocks, room.game.functions, `${t.name} 草稿`);
+            draftBox.appendChild(draftPre);
+          }
+          card.appendChild(draftBox);
+        }
+
+        specTurretsList.appendChild(card);
+      });
+    }
 
     specLogList.innerHTML = '';
     room.actionLog.forEach((item) => {
@@ -606,6 +826,11 @@
 
   socket.on('teacher:rooms', (rooms) => {
     if (meta) renderDashboard(rooms);
+  });
+
+  socket.on('teacher:feedbacks', (list) => {
+    feedbacksSnapshot = Array.isArray(list) ? list : [];
+    renderFeedbackWall(feedbacksSnapshot);
   });
 
   init();

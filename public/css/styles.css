@@ -1398,3 +1398,120 @@ input[type="range"] {
   margin-bottom: 8px;
 }
 
+.teacher-turret-code-card {
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.teacher-block-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.teacher-block-chip {
+  font-size: 0.74rem;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #e0f2fe;
+}
+
+.teacher-code-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #060b16;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.42;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.teacher-draft-box {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px dashed rgba(251, 191, 36, 0.6);
+}
+
+.feedback-form-box {
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid var(--border-bright);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 14px 0;
+  text-align: left;
+}
+
+.star-picker {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+.star-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.star-btn.active {
+  border-color: var(--amber);
+  background: rgba(245, 158, 11, 0.2);
+  color: #fde68a;
+  font-weight: 700;
+}
+
+.fb-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+
+.fb-tag-btn {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.fb-tag-btn.active {
+  border-color: var(--cyan);
+  background: rgba(56, 189, 248, 0.18);
+  color: #bae6fd;
+  font-weight: 700;
+}
+
+.teacher-feedback-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.teacher-feedback-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: 10px;
+  padding: 12px;
+}
+

@@ -56,7 +56,10 @@ app.get('/api/meta', (_req, res) => {
     fallbackTargets: constants.FALLBACK_TARGETS,
     loopModes: constants.LOOP_MODES,
     quickTips: constants.QUICK_TIPS,
-    pythonBounties: constants.PYTHON_BOUNTIES
+    pythonBounties: constants.PYTHON_BOUNTIES,
+    gameModes: constants.GAME_MODES,
+    timedEndlessDurationSec: constants.TIMED_ENDLESS_DURATION_SEC,
+    feedbackTags: constants.FEEDBACK_TAGS
   });
 });
 
@@ -84,6 +87,10 @@ function broadcastTeacherDashboard() {
   io.to('teachers').emit('teacher:rooms', roomManager.getTeacherDashboardSnapshot());
 }
 
+function broadcastTeacherFeedbacks() {
+  io.to('teachers').emit('teacher:feedbacks', roomManager.getTeacherFeedbacksSnapshot());
+}
+
 io.on('connection', (socket) => {
   socket.data.role = null;
   socket.data.roomCode = null;
@@ -107,6 +114,7 @@ io.on('connection', (socket) => {
     socket.data.role = 'teacher';
     socket.join('teachers');
     socket.emit('teacher:rooms', roomManager.getTeacherDashboardSnapshot());
+    socket.emit('teacher:feedbacks', roomManager.getTeacherFeedbacksSnapshot());
     if (typeof ack === 'function') ack({ ok: true, token });
   });
 
@@ -338,6 +346,33 @@ io.on('connection', (socket) => {
         : null;
     }
     if (typeof ack === 'function') ack({ ok: res.ok, error: res.error, line: res.line, turret: updatedTurret });
+  });
+
+  socket.on('student:sync_draft', ({ turretId, blocks } = {}, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.savePendingDraft(
+      socket.data.roomCode,
+      socket.data.playerId,
+      { turretId, blocks }
+    );
+    if (res.ok) {
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
+  });
+
+  socket.on('student:submit_feedback', (payload = {}, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) {
+      if (typeof ack === 'function') ack({ ok: false, error: '尚未加入房間' });
+      return;
+    }
+    const res = roomManager.submitFeedback(socket.data.roomCode, socket.data.playerId, payload);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+      broadcastTeacherFeedbacks();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, feedback: res.feedback, error: res.error });
   });
 
   socket.on('student:use_skill', ({ skillId } = {}, ack) => {
