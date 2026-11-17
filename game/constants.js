@@ -603,40 +603,40 @@ const PYTHON_BOUNTIES = [
   {
     id: 'bounty_move',
     title: '📍 空間傳送密碼',
-    scratchClue: '用藍色「移動砲塔」或「來回巡邏」積木',
-    pythonHint: '讓底下出現 turret.move_to 或 patrol',
+    scratchClue: '拖入藍色「📍 移動砲塔到座標」或「🛸 來回巡邏移動」積木並套用',
+    pythonHint: '藍色動作積木 · 移動追怪或貼近基地',
     rewardCoins: 12,
     rewardBudget: 0
   },
   {
     id: 'bounty_var_add',
-    title: '➕ 火力疊加密碼 (+=)',
-    scratchClue: '用橘色「將變數增加 (...)」積木',
-    pythonHint: '讓底下出現 += 累加符號',
+    title: '➕ 火力疊加密碼',
+    scratchClue: '拖入橘色「➕ 將變數增加 (...)」積木並套用',
+    pythonHint: '橘色變數積木 · 把傷害或攻速往上累加',
     rewardCoins: 14,
     rewardBudget: 0
   },
   {
     id: 'bounty_if_shield',
-    title: '🔀 專打護盾密碼 (if)',
-    scratchClue: '用黃色「如果 ＜有護盾／BOSS＞」積木',
-    pythonHint: '讓底下出現 if monster.',
+    title: '🔀 專打護盾密碼',
+    scratchClue: '拖入黃色「🔀 如果 ＜怪物有能量護盾／BOSS＞ 那麼」積木並套用',
+    pythonHint: '黃色條件積木 · 優先集火紫盾或王怪',
     rewardCoins: 16,
     rewardBudget: 0
   },
   {
     id: 'bounty_loop_weapon',
-    title: '🩷 迴圈連發＋改裝神武 (for)',
-    scratchClue: '在同一座塔放入「重複迴圈」＋「特效武器」',
-    pythonHint: '讓底下同時出現 for 與 set_weapon',
+    title: '🩷 迴圈連發＋改裝神武',
+    scratchClue: '在同一座塔同時放入「🩷 重複迴圈」＋「⚡ 切換武器類型（冰霜/閃電/重砲）」',
+    pythonHint: '粉色迴圈＋藍色武器 · 無限連射放特效',
     rewardCoins: 18,
     rewardBudget: 4
   },
   {
     id: 'bounty_fn_sync',
-    title: '🧩 團隊神裝複製模組 (def)',
-    scratchClue: '從「我的函式」套用函式到至少 2 座砲塔（省 15% 算力！）',
-    pythonHint: '用同名 def 函式一次控制多座砲塔！',
+    title: '🧩 團隊神裝共用模組',
+    scratchClue: '從「🧩 我的函式積木」套用到至少 2 座砲塔（省 15% 算力！）',
+    pythonHint: '綠色函式積木 · 多塔共用省算力',
     rewardCoins: 24,
     rewardBudget: 8
   }
@@ -709,45 +709,45 @@ const RELIC_CARDS = [
 const PYTHON_CHEST_QUIZZES = [
   {
     id: 'q_var_add',
-    question: '原本 damage = 25，又執行了一行 damage += 10，現在每次傷害變多少？',
-    options: ['變成 10', '變成 35（原本再加 10）', '還是 25 不變'],
+    question: '🧱 砲塔的「傷害」原本是 25，你在下面又接了一塊橘色積木「➕ 將變數傷害增加 10」，現在每次傷害會變多少？',
+    options: ['變成 10', '變成 35（在原本的 25 再加上 10）', '還是 25 不變'],
     correctIndex: 1,
-    explain: '+= 代表「在原本的數字上面再往上累加」喔！'
+    explain: '橘色「將變數增加」積木會把原本的數字再往上累加，25 + 10 = 35 喔！'
   },
   {
     id: 'q_for_loop',
-    question: '想讓砲塔不要只打 3 發就停機、要一直連射，Python 需要哪個語法？',
-    options: ['for i in range(N): （重複迴圈）', '# 註解說明', 'damage = 20'],
+    question: '🧱 發現砲塔只打 3 發就停下來休息了！要拖入哪一塊 Scratch 積木才能讓砲塔持續連射？',
+    options: ['🩷 重複迴圈積木（重複 N 次連發 / 掃描 N 隻）', '🟦 移動砲塔到座標', '🟧 把傷害變數設為 20'],
     correctIndex: 0,
-    explain: 'for 就是 Scratch 的「重複 N 次迴圈」，能讓砲塔持續連射！'
+    explain: '沒放「🩷 重複迴圈」時砲塔只會試射 3 發；放進重複迴圈積木才會持續連射！'
   },
   {
     id: 'q_if_shield',
-    question: '看見程式碼寫 if monster.shield > 0:，代表砲塔在做什麼？',
-    options: ['把怪物冰凍起來', '如果怪物有能量護盾就優先打牠', '把砲塔飛到角落'],
+    question: '🧱 你幫砲塔放入黃色積木「🔀 如果 ＜怪物有能量護盾＞ 那麼優先鎖定」，砲塔會怎麼挑選目標？',
+    options: ['把怪物原地冰凍起來', '先瞄準身上有紫色護盾的怪物攻擊', '讓砲塔飛到角落躲起來'],
     correctIndex: 1,
-    explain: 'if 就是「如果...那麼」，先檢查怪物的 shield（護盾）是不是大於 0！'
+    explain: '黃色「如果 ＜條件＞ 那麼」積木會優先檢查條件，有護盾的怪會先被集火並打出破盾增傷！'
   },
   {
     id: 'q_def_fn',
-    question: '使用 def guard_base(): 把多座砲塔套用同一組積木有什麼好處？',
-    options: ['全隊省算力折扣＋修改函式能全部砲塔一起升級', '怪物會變更快', '砲塔會消失'],
+    question: '🧱 用「🧩 我的函式積木」把常用積木存起來，套用到多座砲塔有什麼好處？',
+    options: ['全隊省 15% 算力＋修改函式積木就能全部砲塔一起升級', '怪物會變更快', '砲塔會消失不見'],
     correctIndex: 0,
-    explain: 'def 定義一次共用招式，既省算力又能一次維護多座砲塔！'
+    explain: '共用「🧩 我的函式積木」既能幫全隊省下算力，還能一次升級所有套用的砲塔！'
   },
   {
     id: 'q_move_xy',
-    question: 'turret.move_to(390, 270) 括號裡的 390 和 270 代表什麼？',
-    options: ['傷害與金幣', '地圖上的左右 (X) 與上下 (Y) 座標', '迴圈次數'],
+    question: '🧱 藍色積木「📍 移動砲塔到座標 (X: 390, Y: 270)」裡的兩個數字代表什麼意思？',
+    options: ['傷害與金幣數量', '戰場舞台上的左右 (X) 與上下 (Y) 位置', '連射的次數'],
     correctIndex: 1,
-    explain: 'move_to(X, Y) 會控制砲塔飛到戰場指定的 X, Y 座標位置！'
+    explain: '和 Scratch 舞台座標一樣，X 代表左右位置、Y 代表上下位置，還能點「🎯 點地圖」直接選點！'
   },
   {
     id: 'q_set_weapon',
-    question: 'turret.set_weapon("chain") 會幫砲塔裝上哪種武器？',
-    options: ['⛓️ 連鎖閃電（電弧彈跳消滅分裂怪）', '❄️ 冰霜緩速彈', '💥 等離子重砲'],
+    question: '🧱 遇到「細胞分裂史萊姆」單發打死會分裂成兩隻！換裝哪種 Scratch 武器積木可以阻止牠分裂？',
+    options: ['⛓️ 連鎖閃電 或 💥 等離子重砲（群體／範圍攻擊）', '用最基礎的單發雷射慢慢點射', '把攻擊射程調小'],
     correctIndex: 0,
-    explain: '"chain" 是連鎖閃電，專門打分裂蟲群和破護盾超有效！'
+    explain: '使用 ⛓️ 連鎖閃電、💥 等離子重砲，或搭配「📡 掃描 N 隻同時打」積木擊殺，就不會分裂囉！'
   }
 ];
 

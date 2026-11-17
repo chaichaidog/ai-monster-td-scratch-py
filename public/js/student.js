@@ -1,5 +1,10 @@
 (function () {
-  const socket = io();
+  const socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 3000
+  });
   const sound = new window.SoundEngine();
   const Transpiler = window.ScratchTranspiler;
 
@@ -28,6 +33,10 @@
   let myPlayerId = null;
   let myPlayerToken = sessionStorage.getItem('ai_td_player_token') || '';
   let teacherAuthToken = readStoredTeacherToken();
+  let currentSession = null; // { code, nickname, grade }
+  let hasConnectedOnce = false;
+  let rejoinInFlight = false;
+  let heartbeatTimer = null;
   let selectedGrade = 'G7';
   let selectedTurretId = 'T1';
   let activeTab = 'scratch';
@@ -443,7 +452,7 @@
         sound.ensureContext();
         socket.emit('student:use_skill', { skillId: skill.id }, (res) => {
           if (!res || !res.ok) {
-            showToast((res && res.error) || '技能施放失敗');
+            handleActionAckError(res, '技能施放失敗');
             return;
           }
           showToast(`✨ 已啟動：${skill.name}！`);
@@ -503,10 +512,10 @@
     }
 
     const savedRaw = sessionStorage.getItem('ai_td_session');
-    if (savedRaw && !urlRoom) {
+    if (savedRaw) {
       try {
         const saved = JSON.parse(savedRaw);
-        if (saved && saved.roomCode && saved.nickname && saved.grade) {
+        if (saved && saved.roomCode && saved.nickname && saved.grade && (!urlRoom || saved.roomCode === urlRoom)) {
           inputRoomCode.value = saved.roomCode;
           inputNickname.value = saved.nickname;
           setGrade(saved.grade);
@@ -522,6 +531,79 @@
     viewJoin.classList.toggle('hidden', name !== 'join');
     viewLobby.classList.toggle('hidden', name !== 'lobby');
     viewGame.classList.toggle('hidden', name !== 'game');
+  }
+
+  function sendHeartbeat() {
+    if (!currentSession) return;
+    if (socket.connected === false && typeof socket.connect === 'function') {
+      socket.connect();
+      return;
+    }
+    socket.emit(
+      'student:heartbeat',
+      { code: currentSession.code, playerToken: myPlayerToken },
+      (res) => {
+        if (res && res.needRejoin) {
+          triggerAutoRejoin();
+        }
+      }
+    );
+  }
+
+  function ensureHeartbeat() {
+    if (heartbeatTimer || typeof setInterval !== 'function') return;
+    heartbeatTimer = setInterval(sendHeartbeat, 6000);
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatTimer && typeof clearInterval === 'function') {
+      clearInterval(heartbeatTimer);
+    }
+    heartbeatTimer = null;
+  }
+
+  function triggerAutoRejoin() {
+    if (!currentSession || rejoinInFlight) return;
+    if (socket.connected === false && typeof socket.connect === 'function') {
+      socket.connect();
+      return;
+    }
+    rejoinInFlight = true;
+    const { code, nickname, grade } = currentSession;
+    const isTeacherRole = grade === 'TEACHER';
+    const latestToken = isTeacherRole ? (teacherAuthToken || readStoredTeacherToken()) : '';
+    socket.emit(
+      'student:join_room',
+      {
+        code,
+        nickname,
+        grade,
+        playerToken: myPlayerToken,
+        isTeacher: isTeacherRole,
+        teacherToken: latestToken
+      },
+      (res) => {
+        rejoinInFlight = false;
+        if (res && res.ok) {
+          myPlayerId = res.playerId;
+          myPlayerToken = res.playerToken;
+          if (res.teacherToken) {
+            teacherAuthToken = res.teacherToken;
+            saveStoredTeacherToken(res.teacherToken);
+          }
+          sessionStorage.setItem('ai_td_player_token', myPlayerToken);
+          onRoomState(res.room);
+        }
+      }
+    );
+  }
+
+  function handleActionAckError(res, fallbackMsg = '') {
+    if (res && res.needRejoin) {
+      triggerAutoRejoin();
+    }
+    const msg = (res && res.error) || fallbackMsg;
+    if (msg) showToast(msg);
   }
 
   function attemptJoin(code, nickname, grade, silent = false) {
@@ -552,6 +634,11 @@
         }
         myPlayerId = res.playerId;
         myPlayerToken = res.playerToken;
+        currentSession = {
+          code: res.room.code,
+          nickname: nickname || (isTeacherRole ? '👩‍🏫 老師' : ''),
+          grade
+        };
         if (res.teacherToken) {
           teacherAuthToken = res.teacherToken;
           saveStoredTeacherToken(res.teacherToken);
@@ -561,6 +648,7 @@
           'ai_td_session',
           JSON.stringify({ roomCode: res.room.code, nickname: nickname || '👩‍🏫 老師', grade })
         );
+        ensureHeartbeat();
         sound.ensureContext();
         onRoomState(res.room);
       }
@@ -581,13 +669,16 @@
     const me = roomState.players.find((p) => p.id === myPlayerId);
     const nextReady = !(me && me.ready);
     socket.emit('student:set_ready', { ready: nextReady }, (res) => {
-      if (res && !res.ok && res.error) showToast(res.error);
+      if (res && !res.ok) handleActionAckError(res);
     });
   });
 
   function leaveToJoin() {
     socket.emit('student:leave_room');
     sessionStorage.removeItem('ai_td_session');
+    currentSession = null;
+    rejoinInFlight = false;
+    stopHeartbeat();
     roomState = null;
     myPlayerId = null;
     dirtyDraft = false;
@@ -642,7 +733,7 @@
 
   btnPauseSolo.addEventListener('click', () => {
     socket.emit('student:toggle_pause', {}, (res) => {
-      if (res && !res.ok && res.error) showToast(res.error);
+      if (res && !res.ok) handleActionAckError(res);
     });
   });
 
@@ -650,7 +741,7 @@
     sound.ensureContext();
     socket.emit('student:start_first_wave', {}, (res) => {
       if (!res || !res.ok) {
-        if (res && res.error) showToast(res.error);
+        if (res) handleActionAckError(res);
         return;
       }
       sound.playWaveAlert();
@@ -662,7 +753,7 @@
     sound.ensureContext();
     socket.emit('student:spawn_test_dummy', {}, (res) => {
       if (!res || !res.ok) {
-        if (res && res.error) showToast(res.error);
+        if (res) handleActionAckError(res);
         return;
       }
       showToast('🧪 模擬訓練靶怪已出發！觀察你的砲塔射程、移動與如果條件有沒有生效！', 3800);
@@ -702,8 +793,11 @@
       persistDraftProgress(selectedTurretId, workspaceBlocks, true);
     }
     socket.emit('student:end_turn', {}, (res) => {
-      if (res && !res.ok && res.error) showToast(res.error);
-      else dirtyDraft = false;
+      if (!res || !res.ok) {
+        handleActionAckError(res);
+      } else {
+        dirtyDraft = false;
+      }
     });
   });
 
@@ -1648,6 +1742,7 @@
       (res) => {
         deployInFlight = false;
         if (!res || !res.ok) {
+          if (res && res.needRejoin) triggerAutoRejoin();
           deployErrorMsg = (res && res.error) || '套用 Scratch 積木失敗';
           persistDraftProgress(targetId, deployingBlocks, true);
           updateScratchPreview();
@@ -1696,7 +1791,7 @@
       { name: cleanName, blocks: cleanBlocks },
       (res) => {
         if (!res || !res.ok) {
-          showToast((res && res.error) || '儲存函式失敗');
+          handleActionAckError(res, '儲存函式失敗');
           return;
         }
         inputFnName.value = '';
@@ -1800,7 +1895,7 @@
         if (pickupId !== null) {
           sound.ensureContext();
           socket.emit('student:collect_pickup', { pickupId }, (res) => {
-            if (res && !res.ok && res.error) showToast(res.error);
+            if (res && !res.ok) handleActionAckError(res);
           });
           return;
         }
@@ -2010,7 +2105,7 @@
           { turretId: selectedTurretId, functionId: fn.id },
           (res) => {
             if (!res || !res.ok) {
-              showToast((res && res.error) || '套用模組失敗');
+              handleActionAckError(res, '套用模組失敗');
               return;
             }
             dirtyDraft = false;
@@ -2122,7 +2217,7 @@
             card.addEventListener('click', () => {
               sound.ensureContext();
               socket.emit('student:pick_relic', { relicId: opt.id }, (res) => {
-                if (res && !res.ok && res.error) showToast(res.error);
+                if (res && !res.ok) handleActionAckError(res);
               });
             });
             relicCardsGrid.appendChild(card);
@@ -2141,7 +2236,7 @@
         if (lastRenderedChestQuizId !== quiz.id) {
           lastRenderedChestQuizId = quiz.id;
           if (chestQuizPicker) {
-            chestQuizPicker.textContent = `🔓 「${quiz.picker || '隊友'}」開啟了密碼寶箱！選對全隊 +15 🪙 ＆ +4 永久算力！`;
+            chestQuizPicker.textContent = `🔓 「${quiz.picker || '隊友'}」開啟了 Scratch 密碼寶箱！選對全隊 +15 🪙 ＆ +4 永久算力！`;
           }
           if (chestQuizQuestion) {
             chestQuizQuestion.textContent = quiz.question;
@@ -2157,7 +2252,7 @@
                 sound.ensureContext();
                 socket.emit('student:answer_chest', { choiceIndex: idx }, (res) => {
                   if (!res || !res.ok) {
-                    showToast((res && res.error) || '送出答案失敗');
+                    handleActionAckError(res, '送出答案失敗');
                     return;
                   }
                   showToast(res.message || (res.correct ? '🎉 答對了！+15🪙 +4算力！' : '💡 獲得鼓勵獎勵 +4🪙！'), 4800);
@@ -2220,16 +2315,16 @@
           knownBounties.add(bId);
           const bInfo = meta.pythonBounties.find((item) => item.id === bId);
           if (bInfo && g.elapsed > 0.2) {
-            showToast(`🕵️ 密碼懸賞破譯：「${bInfo.title}」完成！獲得 +${bInfo.rewardCoins} 🪙！`, 4600);
+            showToast(`🕵️ 積木懸賞破譯：「${bInfo.title}」完成！獲得 +${bInfo.rewardCoins} 🪙！`, 4600);
           }
         }
       });
       const nextBounty = meta.pythonBounties.find((item) => !g.completedBounties.includes(item.id));
       bountyProgress.textContent = `${g.completedBounties.length} / ${meta.pythonBounties.length}`;
       if (nextBounty) {
-        bountyText.textContent = `🕵️ 懸賞任務「${nextBounty.title}」：${nextBounty.scratchClue}（${nextBounty.pythonHint}）→ 獎金 +${nextBounty.rewardCoins}🪙`;
+        bountyText.textContent = `🕵️ Scratch 積木任務「${nextBounty.title}」：${nextBounty.scratchClue} → 獎金 +${nextBounty.rewardCoins}🪙`;
       } else {
-        bountyText.textContent = '🎉 全數 5 項 Python 密碼懸賞已破譯完畢，全隊戰力大爆發！';
+        bountyText.textContent = '🎉 全數 5 項 Scratch 積木密碼已破譯完畢，全隊戰力大爆發！';
       }
     }
 
@@ -2292,6 +2387,7 @@
     const myTurn = isMyTurn();
     const mePlayer = room.players.find((p) => p.id === myPlayerId);
     const partnerPlayer = room.players.find((p) => p.id !== myPlayerId);
+    const partnerDisconnected = Boolean(partnerPlayer && !partnerPlayer.connected);
 
     if (wasMyTurn === true && !myTurn && dirtyDraft) {
       flushWorkspaceInputs();
@@ -2353,15 +2449,22 @@
       turnBanner.className = 'turn-banner my-turn';
       if (mePlayer && mePlayer.isTeacher) {
         turnTitle.textContent = `👩‍🏫 第 ${room.turnNumber} 回合：輪到老師示範調整 Scratch 砲塔！`;
-        turnSubtitle.textContent = '老師調整完按下「🚀 套用這組 Scratch 積木到砲塔」，可隨時按右側換學生動手設計！';
+        turnSubtitle.textContent = partnerDisconnected
+          ? `⚠️ 學生「${partnerPlayer.nickname}」目前連線中斷，等待對方自動重連後即可換手與繼續倒數！`
+          : '老師調整完按下「🚀 套用這組 Scratch 積木到砲塔」，可隨時按右側換學生動手設計！';
       } else {
         turnTitle.textContent = `🎯 第 ${room.turnNumber} 回合：輪到你拼裝 Scratch 砲塔積木！`;
-        turnSubtitle.textContent = partnerPlayer && partnerPlayer.isTeacher
-          ? '老師正在旁邊幫你加油＆撿場上金幣！拼完按「🚀 套用」或右側換老師示範。'
-          : '拼完按下「🚀 套用這組 Scratch 積木到砲塔」，完成調整可按右側換隊友接手。';
+        turnSubtitle.textContent = partnerDisconnected
+          ? `⚠️ 隊友「${partnerPlayer.nickname}」目前連線中斷，等待對方自動重連後即可換手與繼續倒數！`
+          : (partnerPlayer && partnerPlayer.isTeacher
+            ? '老師正在旁邊幫你加油＆撿場上金幣！拼完按「🚀 套用」或右側換老師示範。'
+            : '拼完按下「🚀 套用這組 Scratch 積木到砲塔」，完成調整可按右側換隊友接手。');
       }
-      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰暫停計時（可點換手）' : `剩餘 ${room.turnTimeLeft} 秒`;
+      turnTimerPill.textContent = partnerDisconnected
+        ? '等待隊友重連'
+        : (g.firstWaveWaitingStart ? '備戰暫停計時（可點換手）' : `剩餘 ${room.turnTimeLeft} 秒`);
       turnTimerPill.classList.remove('hidden');
+      btnEndTurn.textContent = partnerDisconnected ? '⏳ 等待隊友重連中...' : '完成調整，換隊友接手 ↻';
       btnEndTurn.classList.remove('hidden');
       teammateTipsBar.classList.add('hidden');
     } else {
@@ -2462,7 +2565,7 @@
       const cards = [
         ['總評等＆稱號', `${rankInfo.rank} 級 · ${rankInfo.title}`],
         ['防守總分', `${g.score} 分（第 ${g.wave} 波 · 最高連擊 ${g.bestCombo}x）`],
-        ['程式觀念＆懸賞', `4 大觀念 ${learnedCount}/4 · 密碼懸賞 ${bountyDone}/5`],
+        ['程式觀念＆懸賞', `4 大觀念 ${learnedCount}/4 · 積木密碼 ${bountyDone}/5`],
         ['戰場解鎖成就', `已獲得 ${achCount} 枚徽章（條件 ${g.stats.conditionTriggers} 次 · 迴圈 ${g.stats.loopBursts} 次）`]
       ];
       cards.forEach(([k, v]) => {
@@ -2491,6 +2594,38 @@
     } else {
       renderGame(room);
     }
+  }
+
+  socket.on('connect', () => {
+    if (!hasConnectedOnce) {
+      hasConnectedOnce = true;
+      return;
+    }
+    if (currentSession) {
+      triggerAutoRejoin();
+    }
+  });
+
+  socket.on('disconnect', () => {
+    if (currentSession) {
+      showToast('⚠️ 與伺服器連線暫時中斷，正在自動重連...', 3600);
+    }
+  });
+
+  if (typeof document.addEventListener === 'function') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && currentSession) {
+        sendHeartbeat();
+      }
+    });
+  }
+
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('focus', () => {
+      if (currentSession) {
+        sendHeartbeat();
+      }
+    });
   }
 
   socket.on('room:state', (room) => {

@@ -559,7 +559,7 @@ function collectPickup(state, pickupId, collectorName = '隊友') {
       kind: 'pickup_collected',
       x: pickup.x,
       y: pickup.y,
-      text: `${collectorName} 開啟 🔐 Python 寶箱!`,
+      text: `${collectorName} 開啟 🔐 積木寶箱!`,
       color: '#c084fc'
     });
     return { ok: true, pickup, chestQuiz: state.activeChestQuiz };
@@ -606,7 +606,7 @@ function answerChestQuiz(state, choiceIndex) {
     rewardCoins,
     rewardBudget,
     text: correct
-      ? `🎉 Python 密碼答對！全隊 +${rewardCoins}🪙 ＋ +${rewardBudget}算力！`
+      ? `🎉 Scratch 積木密碼答對！全隊 +${rewardCoins}🪙 ＋ +${rewardBudget}算力！`
       : `💡 答案是「${quiz.options[quiz.correctIndex]}」（安慰獎 +${rewardCoins}🪙）`
   });
   return {
@@ -686,7 +686,7 @@ function spawnBonusChest(state) {
     quiz
   };
   state.pickups.push(pickup);
-  pushEvent(state, { kind: 'wave_clear', nextWave: state.wave, title: '🔐 老師空投 Python 密碼寶箱！快點擊解題領 15 金幣！' });
+  pushEvent(state, { kind: 'wave_clear', nextWave: state.wave, title: '🔐 老師空投 Scratch 密碼寶箱！快點擊解題領 15 金幣！' });
   return { ok: true, pickup };
 }
 
@@ -790,7 +790,7 @@ function computeEndgameRank(state) {
   }
 
   let title = '🛡️ 不倒鐵壁守衛';
-  if (bountyCount >= 4 && learnedCount === 4) title = '🧠 Python 密碼破譯王';
+  if (bountyCount >= 4 && learnedCount === 4) title = '🧠 Scratch 積木破譯王';
   else if (weaponCounts.chain >= 2) title = '⚡ 雷霆連鎖魔導師';
   else if (weaponCounts.frost >= 2) title = '❄️ 絕對零度冰霜王';
   else if (movedCount >= 2) title = '🚀 鬼神走位戰術家';

@@ -736,3 +736,77 @@ test('Socket.IO 8-9 grade co-op room (G8+G9 sync on twin_lanes) enforces G7 excl
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('Socket.IO student:heartbeat restores dropped player so end_turn and timer rotation recover seamlessly', async () => {
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const wsUrl = `ws://127.0.0.1:${port}/socket.io/?EIO=4&transport=websocket`;
+
+  const teacherSock = new MiniSioClient(wsUrl);
+  const p1Sock = new MiniSioClient(wsUrl);
+  const p2SockOld = new MiniSioClient(wsUrl);
+  const p2SockNew = new MiniSioClient(wsUrl);
+
+  try {
+    const loginRes = await fetch(`${baseUrl}/api/teacher/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin: process.env.TEACHER_PIN || '1234' })
+    });
+    const loginData = await loginRes.json();
+
+    await teacherSock.connect();
+    await p1Sock.connect();
+    await p2SockOld.connect();
+    await p2SockNew.connect();
+
+    await teacherSock.emitAsync('teacher:auth', { token: loginData.token });
+    const createAck = await teacherSock.emitAsync('teacher:create_room', {
+      code: '777',
+      grade: 'G7',
+      maxPlayers: 2,
+      turnDuration: 15
+    });
+    assert.equal(createAck.ok, true);
+
+    const j1 = await p1Sock.emitAsync('student:join_room', { code: '777', nickname: '學生一', grade: 'G7' });
+    const j2 = await p2SockOld.emitAsync('student:join_room', { code: '777', nickname: '學生二', grade: 'G7' });
+    assert.equal(j1.ok, true);
+    assert.equal(j2.ok, true);
+
+    await p1Sock.emitAsync('student:set_ready', { ready: true });
+    const startAck = await p2SockOld.emitAsync('student:set_ready', { ready: true });
+    assert.equal(startAck.started, true);
+
+    // Simulate p2 dropping and a new unattached socket calling end_turn -> gets needRejoin
+    const unattachedAck = await p2SockNew.emitAsync('student:end_turn', {});
+    assert.equal(unattachedAck.ok, false);
+    assert.equal(unattachedAck.needRejoin, true);
+
+    p2SockOld.close();
+    await waitMs(80);
+
+    // While p2 is offline, p1 end_turn returns teammate offline
+    const offlineEnd = await p1Sock.emitAsync('student:end_turn', {});
+    assert.equal(offlineEnd.ok, false);
+
+    // p2's reconnected socket sends heartbeat -> restores connected=true without manual F5
+    const hbAck = await p2SockNew.emitAsync('student:heartbeat', {
+      code: '777',
+      playerToken: j2.playerToken
+    });
+    assert.equal(hbAck.ok, true);
+    assert.equal(hbAck.restored, true);
+
+    // Now p1 can end_turn cleanly to p2!
+    const endTurnAck = await p1Sock.emitAsync('student:end_turn', {});
+    assert.equal(endTurnAck.ok, true);
+  } finally {
+    p1Sock.close();
+    p2SockOld.close();
+    p2SockNew.close();
+    teacherSock.close();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

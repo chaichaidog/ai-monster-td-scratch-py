@@ -287,10 +287,13 @@ class RoomManager {
       return { ok: false, error: '請輸入你的暱稱' };
     }
 
-    // Check reconnect by token or disconnected matching nickname
+    // Check reconnect by token (only if offline or same nickname) or disconnected matching nickname
     let existing = null;
     if (playerToken) {
-      existing = room.players.find((p) => p.token === playerToken);
+      const tokenMatch = room.players.find((p) => p.token === playerToken);
+      if (tokenMatch && (!tokenMatch.connected || tokenMatch.nickname === cleanNick)) {
+        existing = tokenMatch;
+      }
     }
     if (!existing) {
       existing = room.players.find(
@@ -299,12 +302,15 @@ class RoomManager {
     }
 
     if (existing) {
+      const wasDisconnected = !existing.connected;
       existing.socketId = socketId;
       existing.connected = true;
       existing.nickname = cleanNick;
       if (teacherJoining) existing.isTeacher = true;
       room.lastActivityAt = Date.now();
-      this.logAction(room, cleanNick, '重新連線回到房間');
+      if (wasDisconnected) {
+        this.logAction(room, cleanNick, '重新連線回到房間');
+      }
       return { ok: true, room, player: existing, reconnected: true };
     }
 
@@ -890,10 +896,10 @@ class RoomManager {
     if (!res.ok) return res;
     room.teacherBanner = {
       id: Date.now(),
-      text: '🔐 老師空投了「Python 密碼寶箱」！快點地圖上的紫色寶箱解題賺 +15 🪙 ＆ +4 算力！',
+      text: '🔐 老師空投了「Scratch 密碼寶箱」！快點地圖上的紫色寶箱解題賺 +15 🪙 ＆ +4 算力！',
       time: new Date().toLocaleTimeString('zh-TW', { hour12: false })
     };
-    this.logAction(room, '👩‍🏫 老師發寶箱', '空投了一個 Python 密碼寶箱');
+    this.logAction(room, '👩‍🏫 老師發寶箱', '空投了一個 Scratch 密碼寶箱');
     return { ok: true, room };
   }
 
@@ -915,7 +921,7 @@ class RoomManager {
     if (!player) return { ok: false, error: '無效玩家' };
     const res = answerChestQuiz(room.game, choiceIndex, player.nickname);
     if (!res.ok) return res;
-    this.logAction(room, player.nickname, res.correct ? '解開 Python 密碼寶箱（+15🪙 / +4算力）' : '嘗試解開 Python 密碼寶箱（差一點，獲得鼓勵 +4🪙）');
+    this.logAction(room, player.nickname, res.correct ? '解開 Scratch 密碼寶箱（+15🪙 / +4算力）' : '嘗試解開 Scratch 密碼寶箱（差一點，獲得鼓勵 +4🪙）');
     return { ok: true, room, ...res };
   }
 

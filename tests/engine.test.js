@@ -1062,6 +1062,65 @@ test('First-wave prep button, test dummy sandbox, shatter elemental combo, and t
   assert.ok(room.game.pickups.some((pk) => pk.kind === 'py_chest'));
 });
 
+test('Scratch chest quizzes and bounties avoid Python syntax and reconnect keeps turn rotation working', () => {
+  const { PYTHON_CHEST_QUIZZES, PYTHON_BOUNTIES } = require('../game/constants');
+  const rm = new RoomManager();
+
+  // All chest quiz questions and bounty clues are Scratch-friendly for students
+  assert.ok(PYTHON_CHEST_QUIZZES.length >= 5);
+  for (const q of PYTHON_CHEST_QUIZZES) {
+    assert.ok(!/turret\.|for i in range|if monster\.|def guard_base|damage \+=/.test(q.question), `Quiz ${q.id} should not require Python syntax`);
+  }
+  for (const b of PYTHON_BOUNTIES) {
+    assert.ok(!/turret\.|if monster\.|set_weapon|def /.test(b.pythonHint), `Bounty ${b.id} hint should be Scratch-friendly`);
+  }
+
+  // Two-player room: disconnect -> reconnect -> manual endTurn & timer rotation both work
+  const { room } = rm.createRoom({ code: '177', grade: 'G7', maxPlayers: 2, turnDuration: 20 });
+  const j1 = rm.joinRoom({ code: '177', nickname: '甲同學', grade: 'G7', socketId: 'sockA' });
+  const j2 = rm.joinRoom({ code: '177', nickname: '乙同學', grade: 'G7', socketId: 'sockB' });
+  assert.equal(j1.ok, true);
+  assert.equal(j2.ok, true);
+
+  // Duplicated-tab protection: active player's token with a different nickname won't hijack
+  const { room: roomDup } = rm.createRoom({ code: '178', grade: 'G7', maxPlayers: 2 });
+  const dup1 = rm.joinRoom({ code: '178', nickname: '原玩家', grade: 'G7', socketId: 's_orig' });
+  const dup2 = rm.joinRoom({ code: '178', nickname: '分身玩家', grade: 'G7', socketId: 's_dup', playerToken: dup1.player.token });
+  assert.equal(dup2.ok, true);
+  assert.equal(roomDup.players.length, 2);
+  assert.equal(roomDup.players[0].nickname, '原玩家');
+  assert.equal(roomDup.players[1].nickname, '分身玩家');
+
+  rm.setPlayerReady('177', j1.player.id, true);
+  rm.setPlayerReady('177', j2.player.id, true);
+  rm.handleStartFirstWave('177', j1.player.id, false);
+
+  // Simulate j2 transient disconnect, then reconnect with token
+  rm.leaveOrDisconnect('sockB', false);
+  assert.equal(room.players[1].connected, false);
+  assert.equal(rm.endTurn('177', j1.player.id).ok, false);
+
+  const rej2 = rm.joinRoom({
+    code: '177',
+    nickname: '乙同學',
+    grade: 'G7',
+    socketId: 'sockB2',
+    playerToken: j2.player.token
+  });
+  assert.equal(rej2.ok, true);
+  assert.equal(rej2.reconnected, true);
+  assert.equal(room.players[1].connected, true);
+
+  // Manual endTurn succeeds after reconnect
+  const endRes = rm.endTurn('177', j1.player.id);
+  assert.equal(endRes.ok, true);
+  assert.equal(room.activeTurnPlayerId, j2.player.id);
+
+  // Timer auto-rotation switches back to j1 after 20s
+  for (let i = 0; i < 420; i++) rm.tickAll(0.05);
+  assert.equal(room.activeTurnPlayerId, j1.player.id);
+});
+
 
 
 

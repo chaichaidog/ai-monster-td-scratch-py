@@ -17,6 +17,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
 const io = new Server(server, {
+  pingTimeout: 45000,
+  pingInterval: 20000,
   cors: {
     origin: true,
     methods: ['GET', 'POST']
@@ -28,6 +30,18 @@ const validTeacherTokens = new Set();
 
 function isValidTeacherToken(token) {
   return Boolean(token && validTeacherTokens.has(token));
+}
+
+function ensureStudentJoined(socket, ack) {
+  if (socket.data.roomCode && socket.data.playerId) return true;
+  if (typeof ack === 'function') {
+    ack({
+      ok: false,
+      needRejoin: true,
+      error: '連線剛剛重設，正在自動重新連線房間，請再操作一次！'
+    });
+  }
+  return false;
 }
 
 // Health check for Render
@@ -298,8 +312,9 @@ io.on('connection', (socket) => {
       }
     }
 
-    // Leave previous room if any
-    if (socket.data.roomCode) {
+    const targetNormCode = roomManager.normalizeCode(payload.code);
+    // Leave previous room only when switching to a different room
+    if (socket.data.roomCode && socket.data.roomCode !== targetNormCode) {
       socket.leave(`room:${socket.data.roomCode}`);
       const oldRooms = roomManager.leaveOrDisconnect(socket.id, true);
       oldRooms.forEach(broadcastRoomState);
@@ -340,11 +355,40 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('student:set_ready', ({ ready } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) {
-      if (typeof ack === 'function') ack({ ok: false, error: '尚未加入房間' });
+  socket.on('student:heartbeat', ({ code, playerToken } = {}, ack) => {
+    const normCode = roomManager.normalizeCode(code || socket.data.roomCode);
+    const room = normCode ? roomManager.getRoom(normCode) : null;
+    if (!room) {
+      if (typeof ack === 'function') ack({ ok: false });
       return;
     }
+    let player = socket.data.playerId
+      ? room.players.find((p) => p.id === socket.data.playerId)
+      : null;
+    if (!player && playerToken) {
+      player = room.players.find((p) => p.token === playerToken) || null;
+    }
+    if (!player) {
+      if (typeof ack === 'function') ack({ ok: false, needRejoin: true });
+      return;
+    }
+    const wasOfflineOrDetached = !player.connected || player.socketId !== socket.id || socket.data.roomCode !== room.code;
+    player.socketId = socket.id;
+    player.connected = true;
+    socket.data.role = 'student';
+    socket.data.roomCode = room.code;
+    socket.data.playerId = player.id;
+    socket.join(`room:${room.code}`);
+    if (wasOfflineOrDetached) {
+      roomManager.logAction(room, player.nickname, '自動恢復連線');
+      broadcastRoomState(room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: true, restored: wasOfflineOrDetached });
+  });
+
+  socket.on('student:set_ready', ({ ready } = {}, ack) => {
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.setPlayerReady(socket.data.roomCode, socket.data.playerId, ready);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -366,7 +410,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:update_turret', ({ turretId, config, code, blocks } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const payload = blocks !== undefined ? { blocks } : (code !== undefined ? { code } : config);
     const res = roomManager.handleUpdateTurret(
       socket.data.roomCode,
@@ -414,7 +458,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:use_skill', ({ skillId } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleUseSkill(socket.data.roomCode, socket.data.playerId, skillId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -424,7 +468,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:continue_endless', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleContinueEndless(socket.data.roomCode, socket.data.playerId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -434,7 +478,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:save_function', (payload = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleSaveFunction(
       socket.data.roomCode,
       socket.data.playerId,
@@ -448,7 +492,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:apply_function', ({ turretId, functionId } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleApplyFunction(
       socket.data.roomCode,
       socket.data.playerId,
@@ -463,7 +507,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:end_turn', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.endTurn(socket.data.roomCode, socket.data.playerId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -473,7 +517,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:send_tip', ({ tip } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.sendTeammateTip(socket.data.roomCode, socket.data.playerId, tip);
     if (res.ok) {
       io.to(`room:${res.room.code}`).emit('room:tip', {
@@ -487,7 +531,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:toggle_pause', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const room = roomManager.getRoom(socket.data.roomCode);
     if (!room) return;
     if (room.turnMode !== 'solo') {
@@ -504,7 +548,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:skip_wave_delay', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleSkipWaveDelay(socket.data.roomCode, socket.data.playerId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -514,7 +558,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:start_first_wave', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleStartFirstWave(socket.data.roomCode, socket.data.playerId, false);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -524,7 +568,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:spawn_test_dummy', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleSpawnTestDummy(socket.data.roomCode, socket.data.playerId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -534,7 +578,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:collect_pickup', ({ pickupId } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleCollectPickup(socket.data.roomCode, socket.data.playerId, pickupId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -544,7 +588,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:pick_relic', ({ relicId } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handlePickRelic(socket.data.roomCode, socket.data.playerId, relicId);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -554,7 +598,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:answer_chest', ({ choiceIndex } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleAnswerChestQuiz(socket.data.roomCode, socket.data.playerId, choiceIndex);
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -572,7 +616,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:map_ping', ({ x, y, label } = {}, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleMapPing(socket.data.roomCode, socket.data.playerId, { x, y, label });
     if (res.ok) {
       broadcastRoomState(res.room);
@@ -581,7 +625,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('student:restart_game', (_payload, ack) => {
-    if (!socket.data.roomCode || !socket.data.playerId) return;
+    if (!ensureStudentJoined(socket, ack)) return;
     const room = roomManager.getRoom(socket.data.roomCode);
     if (!room) return;
     if (room.game.status !== 'victory' && room.game.status !== 'defeat') {

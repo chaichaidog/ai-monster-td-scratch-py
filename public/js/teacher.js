@@ -1,5 +1,11 @@
 (function () {
-  const socket = io();
+  const socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 3000
+  });
+  let hasConnectedOnce = false;
   let meta = null;
   let teacherToken = sessionStorage.getItem('ai_td_teacher_token') || localStorage.getItem('ai_td_teacher_token') || '';
   let roomsSnapshot = [];
@@ -392,7 +398,7 @@
       btnChest.textContent = '🔐 空投寶箱';
       btnChest.addEventListener('click', () => {
         socket.emit('teacher:spawn_chest', { code: room.code }, (res) => {
-          if (res && res.ok) showToast(`🔐 已對房號 ${room.code} 空投 Python 密碼寶箱！`);
+          if (res && res.ok) showToast(`🔐 已對房號 ${room.code} 空投 Scratch 密碼寶箱！`);
           else showToast((res && res.error) || '空投失敗');
         });
       });
@@ -870,7 +876,7 @@
     specBtnChest.addEventListener('click', () => {
       if (!spectatorCode) return;
       socket.emit('teacher:spawn_chest', { code: spectatorCode }, (res) => {
-        if (res && res.ok) showToast(`🔐 已對房號 ${spectatorCode} 空投 Python 密碼寶箱！`);
+        if (res && res.ok) showToast(`🔐 已對房號 ${spectatorCode} 空投 Scratch 密碼寶箱！`);
         else showToast((res && res.error) || '空投失敗');
       });
     });
@@ -902,6 +908,20 @@
         showToast((res && res.error) || '發送失敗');
       }
     });
+  });
+
+  socket.on('connect', () => {
+    if (!hasConnectedOnce) {
+      hasConnectedOnce = true;
+      return;
+    }
+    if (teacherToken) {
+      socket.emit('teacher:auth', { token: teacherToken }, (authRes) => {
+        if (authRes && authRes.ok) {
+          showDashboard();
+        }
+      });
+    }
   });
 
   socket.on('teacher:rooms', (rooms) => {
