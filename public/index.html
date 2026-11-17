@@ -187,7 +187,7 @@
 
         <div class="stat-pill">
           <span>🪙</span>
-          <strong id="hud-coins" style="color: #fde047;">30</strong>
+          <strong id="hud-coins" style="color: var(--amber);">30</strong>
         </div>
 
         <div class="stat-pill">
@@ -227,12 +227,14 @@
         <div id="teammate-tips-bar" class="tip-bar hidden"></div>
       </div>
       <div class="turn-actions-wrap">
+        <span id="prep-timer-pill" class="badge badge-cyan hidden">⏱️ 寫程式 45 秒</span>
         <span id="turn-timer-pill" class="badge badge-amber hidden">剩餘 25 秒</span>
         <button id="btn-test-dummy" class="btn btn-sm hidden" type="button" title="放出無傷訓練靶怪，測試砲塔火力與條件">🧪 試射靶怪</button>
+        <button id="btn-confirm-code" class="btn btn-emerald btn-sm hidden" type="button">✅ 確定程式・開始出怪</button>
         <button id="btn-start-wave-1" class="btn btn-emerald btn-sm hidden" type="button">🚀 開始第 1 波</button>
         <button id="btn-skip-wave" class="btn btn-sm hidden" type="button">⚡ 立即出怪</button>
         <button id="btn-end-turn" class="btn btn-amber btn-sm hidden" type="button">↻ 換隊友</button>
-        <button id="btn-goto-coding" class="btn btn-primary btn-sm" type="button">🧱 寫程式（暫停）</button>
+        <button id="btn-goto-coding" class="btn btn-primary btn-sm" type="button">🧱 寫積木程式</button>
       </div>
     </div>
 
@@ -240,6 +242,7 @@
     <div class="battle-workspace">
       <!-- Mode A: Full Battlefield -->
       <div class="arena-panel">
+        <div id="battle-enemy-intel" class="enemy-intel-strip hidden"></div>
         <div id="map-pick-banner" class="alert alert-info hidden" style="margin: 0 0 8px; padding: 6px 12px; font-size: 0.84rem; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
           <span>🎯 <strong>地圖選點中</strong>：點擊戰場地圖任一位置，選好後自動回到積木頁面！</span>
           <button id="btn-cancel-map-pick" class="btn btn-sm" type="button">取消</button>
@@ -249,12 +252,12 @@
           <canvas id="battle-canvas"></canvas>
           <div id="first-wave-prep-cta" class="prep-cta-overlay hidden">
             <div class="prep-cta-text">
-              🛠️ <strong>備戰中</strong>：先點「寫積木程式」放好砲塔，好了再按開始第 1 波！
+              🛠️ <strong>備戰倒數中</strong>：看敵人情報並調整積木，按「確定程式」或時間到將鎖定開戰！
             </div>
             <div class="prep-cta-actions">
               <button id="btn-overlay-coding" class="btn btn-primary btn-sm" type="button">🧱 寫積木程式</button>
               <button id="btn-overlay-test-dummy" class="btn btn-sm" type="button">🧪 試射</button>
-              <button id="btn-overlay-start-wave" class="btn btn-emerald btn-sm" type="button">🚀 開始第 1 波</button>
+              <button id="btn-overlay-start-wave" class="btn btn-emerald btn-sm" type="button">✅ 確定程式開戰</button>
             </div>
           </div>
         </div>
@@ -286,10 +289,17 @@
             <span id="editor-cost-pill" class="badge badge-cyan">算力預估: 0</span>
           </div>
           <div class="coding-actions-bar">
+            <span id="coding-prep-countdown" class="badge badge-amber">⏱️ 限時 45 秒</span>
             <button id="btn-toggle-py" class="btn btn-sm" type="button">🐍 隱藏 Python</button>
             <button id="btn-deploy-turret" class="btn btn-primary btn-sm" type="button">🚀 套用積木</button>
-            <button id="btn-apply-and-play" class="btn btn-emerald btn-sm" type="button">▶ 套用並回戰場</button>
+            <button id="btn-apply-and-play" class="btn btn-sm" type="button">🎮 回戰場查看</button>
+            <button id="btn-coding-confirm" class="btn btn-emerald btn-sm" type="button">✅ 確定程式・鎖定開戰</button>
           </div>
+        </div>
+
+        <div id="coding-enemy-intel" class="enemy-intel-strip"></div>
+        <div id="coding-locked-banner" class="coding-locked-banner hidden">
+          🔒 <strong>本波程式已鎖定！</strong>正在進行第 <span id="locked-wave-num">1</span> 波戰鬥，守完這一波進入下一波時才會重新解鎖修改（現在僅供檢視）。
         </div>
 
         <div class="code-tabs" style="grid-template-columns: repeat(3, 1fr);">
@@ -424,7 +434,7 @@
   <div id="relic-modal" class="modal-backdrop hidden">
     <div class="modal-card" style="max-width: 680px; text-align: center;">
       <span id="relic-modal-timer" class="badge badge-amber" style="margin-bottom: 8px;">⏱️ 20 秒內 3 選 1（戰場已貼心暫停）</span>
-      <h2 id="relic-modal-title" style="margin: 4px 0 6px; font-size: 1.5rem; color: #fde68a;">⚡ 戰術晶片 3 選 1</h2>
+      <h2 id="relic-modal-title" style="margin: 4px 0 6px; font-size: 1.5rem; color: var(--amber);">⚡ 戰術晶片 3 選 1</h2>
       <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0;">
         選一張能強化你目前 Scratch 積木流派的永久晶片！
       </p>
@@ -436,8 +446,8 @@
   <div id="chest-quiz-modal" class="modal-backdrop hidden">
     <div class="modal-card" style="max-width: 540px;">
       <span class="badge badge-pink" style="margin-bottom: 8px;">🔐 Scratch 積木密碼寶箱</span>
-      <h3 id="chest-quiz-picker" style="margin: 2px 0 8px; color: #f5d0fe; font-size: 1rem;">全隊點擊解碼！</h3>
-      <div id="chest-quiz-question" style="font-weight: 800; font-size: 1.05rem; margin-bottom: 14px; line-height: 1.5; background: #060b16; border: 1px solid var(--border-bright); padding: 12px; border-radius: 10px;"></div>
+      <h3 id="chest-quiz-picker" style="margin: 2px 0 8px; color: var(--purple); font-size: 1rem;">全隊點擊解碼！</h3>
+      <div id="chest-quiz-question" style="font-weight: 800; font-size: 1.05rem; margin-bottom: 14px; line-height: 1.5; background: var(--panel-soft); color: var(--text); border: 1px solid var(--border-bright); padding: 12px; border-radius: 10px;"></div>
       <div id="chest-quiz-options" class="chest-options-col"></div>
     </div>
   </div>
@@ -451,7 +461,7 @@
 
       <!-- Student Feedback Form -->
       <div id="feedback-form-box" class="feedback-form-box">
-        <div style="font-weight: 800; font-size: 0.96rem; color: #fde68a; margin-bottom: 4px;">
+        <div style="font-weight: 800; font-size: 0.96rem; color: var(--amber); margin-bottom: 4px;">
           📝 課後心得與回饋表單（老師可以直接在控制台看到你寫的內容！）
         </div>
         <div class="form-label" style="margin-bottom: 2px; font-size: 0.8rem;">1. 這次用 Scratch 積木寫砲塔好玩嗎？（點選星星）</div>

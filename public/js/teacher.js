@@ -708,8 +708,8 @@
 
       const commentEl = document.createElement('div');
       commentEl.style.fontSize = '0.84rem';
-      commentEl.style.color = '#e2e8f0';
-      commentEl.style.background = 'rgba(2, 6, 23, 0.45)';
+      commentEl.style.color = '#0f172a';
+      commentEl.style.background = '#f1f5f9';
       commentEl.style.padding = '7px 9px';
       commentEl.style.borderRadius = '6px';
       commentEl.textContent = fb.comment ? `💬 「${fb.comment}」` : '💬 （未填寫文字留言）';
@@ -803,7 +803,7 @@
 
         const blkTitle = document.createElement('div');
         blkTitle.style.fontSize = '0.75rem';
-        blkTitle.style.color = '#7dd3fc';
+        blkTitle.style.color = '#0369a1';
         blkTitle.textContent = '🧱 已套用 Scratch 積木順序：';
         card.appendChild(blkTitle);
         card.appendChild(renderBlockListRow(t.blocks, room.game.functions, '（尚未放入積木）'));
@@ -827,7 +827,7 @@
           draftBox.className = 'teacher-draft-box';
           const dLabel = document.createElement('div');
           dLabel.style.fontSize = '0.76rem';
-          dLabel.style.color = '#fde68a';
+          dLabel.style.color = '#b45309';
           dLabel.style.fontWeight = '700';
           dLabel.style.marginBottom = '4px';
           dLabel.textContent = `✏️ ${draft.nickname} 工作區目前正在拼的草稿（尚未按套用）：`;

@@ -1121,47 +1121,60 @@ test('Scratch chest quizzes and bounties avoid Python syntax and reconnect keeps
   assert.equal(room.activeTurnPlayerId, j1.player.id);
 });
 
-test('View mode switching pauses game in coding view while allowing block edits, and resumes in battle view', () => {
+test('Wave intel, timed coding prep, and code locking until next wave work end-to-end', () => {
   const rm = new RoomManager();
-  const { room } = rm.createRoom({ code: '199', grade: 'G7', maxPlayers: 1 });
-  const p = rm.joinRoom({ code: '199', nickname: '專心寫積木', grade: 'G7', socketId: 'sc1' }).player;
+  const { room } = rm.createRoom({ code: '199', grade: 'G7', maxPlayers: 1, prepDuration: 4 });
+  const p = rm.joinRoom({ code: '199', nickname: '限時選手', grade: 'G7', socketId: 'sc1' }).player;
   rm.setPlayerReady('199', p.id, true);
-  rm.handleStartFirstWave('199', p.id, false);
-  assert.equal(room.game.status, 'playing');
 
-  // Switching to coding view auto-pauses the game so monsters freeze
-  const prevDelay = room.game.waveDelay;
-  const codingRes = rm.setPlayerViewMode('199', p.id, 'coding');
-  assert.equal(codingRes.ok, true);
-  assert.equal(room.pausedByCoding, true);
-  assert.equal(room.game.status, 'paused');
-  for (let i = 0; i < 40; i++) rm.tickAll(0.05);
-  assert.equal(room.game.waveDelay, prevDelay, 'Game simulation must stay paused in coding view');
+  // Wave 1 starts in timed 'prep' phase with upcoming enemy intel and unlocked coding
+  const snap1 = rm.serializeRoom(room, true);
+  assert.equal(snap1.wavePhase, 'prep');
+  assert.equal(snap1.codeLocked, false);
+  assert.ok(snap1.prepTimeLeft >= 3 && snap1.prepTimeLeft <= 4);
+  assert.ok(Array.isArray(snap1.game.waveIntel) && snap1.game.waveIntel.length > 0);
+  assert.ok(snap1.game.waveIntel[0].name && snap1.game.waveIntel[0].tip);
 
-  // Student CAN still edit & deploy Scratch blocks while paused for coding!
-  const deployWhileCoding = rm.handleUpdateTurret('199', p.id, 'T1', {
+  // Switching to coding view in prep allows editing, while prep countdown keeps ticking
+  rm.setPlayerViewMode('199', p.id, 'coding');
+  const editDuringPrep = rm.handleUpdateTurret('199', p.id, 'T1', {
     blocks: [
-      { id: 'v1', type: 'set_var', varName: 'damage', op: 'set', value: 25 },
-      { id: 'l1', type: 'loop', loopMode: 'burst', count: 2 }
+      { id: 'v1', type: 'set_var', varName: 'damage', op: 'set', value: 45 },
+      { id: 'l1', type: 'loop', loopMode: 'burst', count: 4 }
     ]
   });
-  assert.equal(deployWhileCoding.ok, true);
-  assert.equal(deployWhileCoding.turret.damage, 25);
+  assert.equal(editDuringPrep.ok, true);
 
-  // Switching back to battle view resumes the game
-  const battleRes = rm.setPlayerViewMode('199', p.id, 'battle');
-  assert.equal(battleRes.ok, true);
-  assert.equal(room.pausedByCoding, false);
+  // Confirming code locks programming immediately and switches room into wave combat
+  const confirmRes = rm.confirmWaveCode('199', p.id);
+  assert.equal(confirmRes.ok, true);
+  assert.equal(confirmRes.locked, true);
+  assert.equal(room.wavePhase, 'combat');
+  assert.equal(room.codeLocked, true);
   assert.equal(room.game.status, 'playing');
 
-  // If teacher explicitly paused, student returning to battle view does NOT override teacher pause
-  rm.togglePause('199', '👩‍🏫 老師', true);
-  assert.equal(room.pausedByTeacher, true);
-  assert.equal(room.game.status, 'paused');
-  assert.equal(rm.handleUpdateTurret('199', p.id, 'T1', { blocks: [] }).ok, false);
-  rm.setPlayerViewMode('199', p.id, 'coding');
-  rm.setPlayerViewMode('199', p.id, 'battle');
-  assert.equal(room.game.status, 'paused', 'Teacher pause must remain active');
+  // Cannot edit turret or functions while wave combat is locked
+  const lockedEdit = rm.handleUpdateTurret('199', p.id, 'T2', { damage: 20 });
+  assert.equal(lockedEdit.ok, false);
+  assert.ok(lockedEdit.error.includes('鎖定'));
+
+  // Clear Wave 1 monsters -> advances to Wave 2 and unlocks coding with Wave 2 intel & reset timer
+  room.game.waveDelay = 0;
+  room.game.spawnQueue = [];
+  room.game.monsters = [];
+  rm.tickAll(0.05);
+  assert.equal(room.game.wave, 2);
+  assert.equal(room.wavePhase, 'prep');
+  assert.equal(room.codeLocked, false);
+  assert.equal(Math.round(room.prepTimeLeft), 4);
+  const snap2 = rm.serializeRoom(room, true);
+  assert.ok(snap2.game.waveIntel.length > 0);
+
+  // If student runs out of prep time in Wave 2, room auto-locks and starts combat
+  for (let i = 0; i < 85; i++) rm.tickAll(0.05);
+  assert.equal(room.wavePhase, 'combat');
+  assert.equal(room.codeLocked, true);
+  assert.equal(rm.handleUpdateTurret('199', p.id, 'T2', { damage: 20 }).ok, false);
 });
 
 

@@ -821,13 +821,27 @@ test('Socket.IO student:heartbeat restores dropped player so end_turn and timer 
     const endTurnAck = await p1Sock.emitAsync('student:end_turn', {});
     assert.equal(endTurnAck.ok, true);
 
-    // View mode switching over Socket.IO: coding pauses, battle resumes
+    // View mode switching & two-player confirm_wave_code locking over Socket.IO
     const codingAck = await p2SockNew.emitAsync('student:set_view_mode', { mode: 'coding' });
     assert.equal(codingAck.ok, true);
-    assert.equal(codingAck.status, 'paused');
     const battleAck = await p2SockNew.emitAsync('student:set_view_mode', { mode: 'battle' });
     assert.equal(battleAck.ok, true);
-    assert.equal(battleAck.status, 'playing');
+
+    const confirm1 = await p1Sock.emitAsync('student:confirm_wave_code', {});
+    assert.equal(confirm1.ok, true);
+    assert.equal(confirm1.waitingPartner, true);
+    assert.equal(confirm1.locked, false);
+
+    const confirm2 = await p2SockNew.emitAsync('student:confirm_wave_code', {});
+    assert.equal(confirm2.ok, true);
+    assert.equal(confirm2.locked, true);
+
+    const lockedUpdateAck = await p2SockNew.emitAsync('student:update_turret', {
+      turretId: 'T1',
+      blocks: [{ id: 'lx', type: 'set_var', varName: 'damage', op: 'set', value: 25 }]
+    });
+    assert.equal(lockedUpdateAck.ok, false);
+    assert.ok(lockedUpdateAck.error.includes('鎖定'));
   } finally {
     p1Sock.close();
     p2SockOld.close();

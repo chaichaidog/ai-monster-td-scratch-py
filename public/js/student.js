@@ -117,8 +117,10 @@
   const turnBanner = document.getElementById('turn-banner');
   const turnTitle = document.getElementById('turn-title');
   const turnSubtitle = document.getElementById('turn-subtitle');
+  const prepTimerPill = document.getElementById('prep-timer-pill');
   const turnTimerPill = document.getElementById('turn-timer-pill');
   const btnTestDummy = document.getElementById('btn-test-dummy');
+  const btnConfirmCode = document.getElementById('btn-confirm-code');
   const btnStartWave1 = document.getElementById('btn-start-wave-1');
   const btnSkipWave = document.getElementById('btn-skip-wave');
   const btnEndTurn = document.getElementById('btn-end-turn');
@@ -126,6 +128,12 @@
   const firstWavePrepCta = document.getElementById('first-wave-prep-cta');
   const btnOverlayTestDummy = document.getElementById('btn-overlay-test-dummy');
   const btnOverlayStartWave = document.getElementById('btn-overlay-start-wave');
+  const battleEnemyIntel = document.getElementById('battle-enemy-intel');
+  const codingEnemyIntel = document.getElementById('coding-enemy-intel');
+  const codingLockedBanner = document.getElementById('coding-locked-banner');
+  const lockedWaveNum = document.getElementById('locked-wave-num');
+  const codingPrepCountdown = document.getElementById('coding-prep-countdown');
+  const btnCodingConfirm = document.getElementById('btn-coding-confirm');
 
   const battleCanvas = document.getElementById('battle-canvas');
   const skillBar = document.getElementById('skill-bar');
@@ -163,6 +171,9 @@
   let currentViewMode = 'battle';
   let mapPickReturnToCoding = false;
   let showPythonMirror = true;
+  let lastWaveIntelKey = '';
+  let lastAutoCodingWave = null;
+  let lastCodeLockedState = null;
 
   let feedbackRating = 5;
   const feedbackSelectedTags = new Set();
@@ -339,6 +350,11 @@
 
   function canEditBlocks() {
     if (!roomState || !roomState.game) return false;
+    if (roomState.codeLocked || roomState.wavePhase === 'combat') return false;
+    const me = Array.isArray(roomState.players)
+      ? roomState.players.find((p) => p.id === myPlayerId)
+      : null;
+    if (me && me.prepConfirmed) return false;
     const st = roomState.game.status;
     return st === 'playing' || (st === 'paused' && !roomState.pausedByTeacher);
   }
@@ -783,6 +799,9 @@
     lastSeenAutoSaveId = null;
     wasMyTurn = null;
     autoSelectedSyncTurret = false;
+    lastWaveIntelKey = '';
+    lastAutoCodingWave = null;
+    lastCodeLockedState = null;
     lastRenderedRelicId = null;
     lastRenderedChestQuizId = null;
     lastRelicsStripKey = '';
@@ -826,16 +845,48 @@
     });
   });
 
-  function triggerStartFirstWave() {
+  function emitConfirmWaveCode() {
     sound.ensureContext();
-    socket.emit('student:start_first_wave', {}, (res) => {
+    socket.emit('student:confirm_wave_code', {}, (res) => {
       if (!res || !res.ok) {
         if (res) handleActionAckError(res);
         return;
       }
+      if (res.waitingPartner) {
+        showToast('🔒 你已確定本波程式！等待隊友確認或倒數結束即開戰！', 3800);
+        return;
+      }
       sound.playWaveAlert();
-      showToast(`⏱️ 倒數計時啟動！${Math.ceil(res.waveDelay || 15)} 秒後第 1 波怪物出動！`, 4200);
+      showToast('🔒 本波程式已鎖定，怪物進攻！守完這一波後會再解鎖修改。', 4200);
+      setViewMode('battle', { syncServer: false });
     });
+  }
+
+  function triggerConfirmWaveCode() {
+    if (!roomState || !roomState.game) return;
+    if (dirtyDraft && canEditBlocks() && isMyTurn() && !deployInFlight) {
+      flushWorkspaceInputs();
+      setMapPickMode(null);
+      const targetId = selectedTurretId;
+      const deployingBlocks = Transpiler.sanitizeBlocks(workspaceBlocks);
+      deployInFlight = true;
+      socket.emit('student:update_turret', { turretId: targetId, blocks: deployingBlocks }, (res) => {
+        deployInFlight = false;
+        if (!res || !res.ok) {
+          if (res && res.needRejoin) triggerAutoRejoin();
+          deployErrorMsg = (res && res.error) || '積木設定有誤，請先修正再確定程式';
+          updateScratchPreview();
+          showToast(deployErrorMsg, 4800);
+          return;
+        }
+        dirtyDraft = false;
+        deployErrorMsg = '';
+        clearSavedDraftProgress(targetId);
+        emitConfirmWaveCode();
+      });
+      return;
+    }
+    emitConfirmWaveCode();
   }
 
   function triggerSpawnTestDummy() {
@@ -849,8 +900,10 @@
     });
   }
 
-  if (btnStartWave1) btnStartWave1.addEventListener('click', triggerStartFirstWave);
-  if (btnOverlayStartWave) btnOverlayStartWave.addEventListener('click', triggerStartFirstWave);
+  if (btnConfirmCode) btnConfirmCode.addEventListener('click', triggerConfirmWaveCode);
+  if (btnCodingConfirm) btnCodingConfirm.addEventListener('click', triggerConfirmWaveCode);
+  if (btnStartWave1) btnStartWave1.addEventListener('click', triggerConfirmWaveCode);
+  if (btnOverlayStartWave) btnOverlayStartWave.addEventListener('click', triggerConfirmWaveCode);
   if (btnTestDummy) btnTestDummy.addEventListener('click', triggerSpawnTestDummy);
   if (btnOverlayTestDummy) btnOverlayTestDummy.addEventListener('click', triggerSpawnTestDummy);
 
@@ -2437,6 +2490,66 @@
     }
   }
 
+  function renderEnemyIntelStrip(g, isPrep, prepSec) {
+    if (!g) return;
+    const intel = Array.isArray(g.waveIntel) ? g.waveIntel : [];
+    const key = `${g.wave}:${isPrep ? 'P' : 'C'}:${intel.map((i) => `${i.type}x${i.count}`).join(',')}`;
+    if (key === lastWaveIntelKey) return;
+    lastWaveIntelKey = key;
+
+    const targets = [battleEnemyIntel, codingEnemyIntel].filter(Boolean);
+    if (targets.length === 0) return;
+
+    if (intel.length === 0) {
+      targets.forEach((el) => {
+        el.innerHTML = '';
+        el.classList.add('hidden');
+      });
+      return;
+    }
+
+    const headText = isPrep
+      ? `👁️ 第 ${g.wave} 波敵人情報（限時調整積木）：`
+      : `⚔️ 第 ${g.wave} 波來襲敵人（程式已鎖定）：`;
+
+    const populateEl = (el) => {
+      el.innerHTML = '';
+      const head = document.createElement('span');
+      head.className = 'enemy-intel-head';
+      head.textContent = headText;
+      el.appendChild(head);
+
+      intel.forEach((e) => {
+        const chip = document.createElement('span');
+        chip.className = 'enemy-intel-chip';
+        chip.title = e.tip || '';
+
+        const dot = document.createElement('span');
+        dot.className = 'enemy-dot';
+        dot.style.background = e.color || '#3b82f6';
+        chip.appendChild(dot);
+
+        const name = document.createElement('strong');
+        name.textContent = `${e.name} ×${e.count}`;
+        chip.appendChild(name);
+
+        const metaParts = [`血${e.hp}`];
+        if (e.shield > 0) metaParts.push(`盾${e.shield}`);
+        if (e.armor > 0) metaParts.push(`甲${e.armor}`);
+        if (e.tip) metaParts.push(e.tip.replace(/^克制：/, '💡'));
+        const metaEl = document.createElement('span');
+        metaEl.className = 'enemy-intel-meta';
+        metaEl.textContent = metaParts.join(' · ');
+        chip.appendChild(metaEl);
+
+        el.appendChild(chip);
+      });
+      el.classList.remove('hidden');
+    };
+
+    targets.forEach(populateEl);
+  }
+
   function renderGame(room) {
     showView('game');
     ensureRenderer();
@@ -2597,62 +2710,85 @@
         ? '🎯【換你囉！】AI 怪物塔防戰'
         : DEFAULT_DOC_TITLE;
     }
+
+    const hasTimedPrep = typeof room.wavePhase === 'string';
+    const isPrepPhase = hasTimedPrep ? (room.wavePhase === 'prep' && g.status === 'playing') : Boolean(g.firstWaveWaitingStart && g.status === 'playing');
+    const isCodeLocked = Boolean(room.codeLocked || room.wavePhase === 'combat' || (mePlayer && mePlayer.prepConfirmed));
+    const prepSec = Math.max(0, Number(room.prepTimeLeft ?? 0));
+
+    renderEnemyIntelStrip(g, isPrepPhase, prepSec);
+
+    if (hasTimedPrep) {
+      if (isPrepPhase && myTurn && !isCodeLocked && lastAutoCodingWave !== g.wave) {
+        lastAutoCodingWave = g.wave;
+        setViewMode('coding', { syncServer: false });
+      }
+      if (lastCodeLockedState === false && isCodeLocked && currentViewMode === 'coding') {
+        setViewMode('battle', { syncServer: false });
+      }
+      lastCodeLockedState = isCodeLocked;
+    }
+
     if (room.turnMode === 'solo') {
       turnBanner.className = 'turn-banner solo-mode';
-      if (room.pausedByCoding) {
-        turnTitle.textContent = '⏸ 寫程式中（遊戲已暫停）';
-        turnSubtitle.textContent = '放好積木後點「▶ 套用並回戰場」或切回「🎮 戰場畫面」繼續';
+      if (isPrepPhase) {
+        turnTitle.textContent = `🛠️ 第 ${g.wave} 波備戰（看敵人情報寫積木）`;
+        turnSubtitle.textContent = '放好積木後按「✅ 確定程式」，確定或時間到後將鎖定直到下波';
       } else if (g.status === 'paused') {
         turnTitle.textContent = '⏸ 戰場暫停中';
         turnSubtitle.textContent = '';
       } else {
-        turnTitle.textContent = '🎮 戰場進行中';
-        turnSubtitle.textContent = '點右方「寫程式（暫停）」可隨時停下來改砲塔積木';
+        turnTitle.textContent = `⚔️ 第 ${g.wave} 波戰鬥中（🔒 程式已鎖定）`;
+        turnSubtitle.textContent = '本波進行中無法修改程式，守完這波後將解鎖下一波備戰！';
       }
       turnTimerPill.classList.add('hidden');
       btnEndTurn.classList.add('hidden');
       teammateTipsBar.classList.add('hidden');
     } else if (room.turnMode === 'sync') {
       turnBanner.className = myTurn ? 'turn-banner my-turn' : 'turn-banner partner-turn';
-      const codingList = Array.isArray(room.codingPlayers) ? room.codingPlayers : [];
-      if (room.pausedByCoding && codingList.length > 0) {
-        turnTitle.textContent = `⏸「${codingList.join('、')}」放積木中（遊戲暫停）`;
-        turnSubtitle.textContent = `你操控 ${owned.join('/')}`;
+      if (isPrepPhase) {
+        turnTitle.textContent = mePlayer && mePlayer.prepConfirmed
+          ? `🔒 你已確定程式，等「${partnerPlayer ? partnerPlayer.nickname : '隊友'}」確認中`
+          : `🛠️ 第 ${g.wave} 波備戰：你控 ${owned.join(' / ')}`;
+        turnSubtitle.textContent = '改好後按「確定程式」，雙方確定或倒數結束即鎖定開戰';
       } else {
-        turnTitle.textContent = `⚡ 同步聯防：你控 ${owned.join(' / ')}`;
+        turnTitle.textContent = `⚔️ 第 ${g.wave} 波戰鬥中 · 鎖定防禦（你控 ${owned.join(' / ')}）`;
         turnSubtitle.textContent = multiConnected
-          ? `隊友：${partnerPlayer ? partnerPlayer.nickname : '夥伴'}`
-          : '隊友尚未加入（暫可全控）';
+          ? `隊友：${partnerPlayer ? partnerPlayer.nickname : '夥伴'} · 守完本波後解鎖程式`
+          : '守完本波後解鎖下一波程式';
       }
       turnTimerPill.classList.add('hidden');
       btnEndTurn.classList.add('hidden');
       teammateTipsBar.classList.add('hidden');
     } else if (myTurn) {
       turnBanner.className = 'turn-banner my-turn';
-      if (room.pausedByCoding) {
-        turnTitle.textContent = `⏸ 第 ${room.turnNumber} 回合 · 寫程式暫停中`;
-      } else {
+      if (isPrepPhase) {
         turnTitle.textContent = mePlayer && mePlayer.isTeacher
-          ? `👩‍🏫 第 ${room.turnNumber} 回合：輪到老師`
-          : `🎯 第 ${room.turnNumber} 回合：輪到你`;
+          ? `👩‍🏫 第 ${g.wave} 波備戰：輪到老師寫積木`
+          : `🎯 第 ${g.wave} 波備戰：輪到你調整積木`;
+        turnSubtitle.textContent = partnerDisconnected
+          ? `⚠️ 隊友「${partnerPlayer.nickname}」重連中`
+          : '確定程式後無法再改直到下一波';
+      } else {
+        turnTitle.textContent = `⚔️ 第 ${g.wave} 波交戰中（🔒 程式鎖定）`;
+        turnSubtitle.textContent = partnerDisconnected
+          ? `⚠️ 隊友「${partnerPlayer.nickname}」重連中`
+          : '專心觀戰或發動基地技能，下波解鎖修改！';
       }
-      turnSubtitle.textContent = partnerDisconnected
-        ? `⚠️ 隊友「${partnerPlayer.nickname}」重連中`
-        : '';
       turnTimerPill.textContent = partnerDisconnected
         ? '等待重連'
-        : (g.firstWaveWaitingStart ? '備戰不倒數' : `剩 ${room.turnTimeLeft}s`);
+        : (g.firstWaveWaitingStart ? '備戰限時中' : `剩 ${room.turnTimeLeft}s`);
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.textContent = partnerDisconnected ? '⏳ 重連中' : '↻ 換隊友';
       btnEndTurn.classList.remove('hidden');
       teammateTipsBar.classList.add('hidden');
     } else {
       turnBanner.className = 'turn-banner partner-turn';
-      turnTitle.textContent = room.pausedByCoding
-        ? `⏸「${room.activeTurnNickname || '隊友'}」放積木中（暫停）`
-        : `⏳「${room.activeTurnNickname || '隊友'}」回合中`;
+      turnTitle.textContent = isPrepPhase
+        ? `⏳「${room.activeTurnNickname || '隊友'}」調整積木中`
+        : `⚔️ 第 ${g.wave} 波交戰中（🔒 程式鎖定）`;
       turnSubtitle.textContent = '可點地圖撿 🪙 或發 🎯 標記';
-      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰中' : `${room.turnTimeLeft}s`;
+      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰限時' : `${room.turnTimeLeft}s`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.add('hidden');
 
@@ -2672,14 +2808,54 @@
       teammateTipsBar.classList.remove('hidden');
     }
 
+    if (prepTimerPill) {
+      prepTimerPill.classList.toggle('hidden', !isPrepPhase);
+      if (isPrepPhase) {
+        prepTimerPill.textContent = mePlayer && mePlayer.prepConfirmed
+          ? `✅ 已確定・剩 ${prepSec}s`
+          : `⏱️ 寫程式剩 ${prepSec}s`;
+      }
+    }
+    if (codingPrepCountdown) {
+      if (isCodeLocked) {
+        codingPrepCountdown.textContent = '🔒 本波已鎖定';
+        codingPrepCountdown.className = 'badge badge-pink';
+      } else {
+        codingPrepCountdown.textContent = `⏱️ 剩 ${prepSec} 秒`;
+        codingPrepCountdown.className = prepSec <= 10 ? 'badge badge-pink' : 'badge badge-amber';
+      }
+    }
+    if (codingLockedBanner) {
+      codingLockedBanner.classList.toggle('hidden', !isCodeLocked);
+      if (lockedWaveNum) lockedWaveNum.textContent = String(g.wave);
+    }
+    if (btnModeCoding) {
+      btnModeCoding.textContent = isCodeLocked
+        ? '🔒 檢視程式（已鎖定）'
+        : (isPrepPhase ? `🧱 寫積木程式（${prepSec}s）` : '🧱 寫積木程式');
+    }
+    if (btnGotoCoding && currentViewMode !== 'coding') {
+      btnGotoCoding.textContent = isCodeLocked ? '🔒 檢視程式（鎖定）' : `🧱 寫程式（${prepSec}s）`;
+    }
+
+    const canConfirmThisWave = isPrepPhase && !(mePlayer && mePlayer.prepConfirmed);
+    if (btnConfirmCode) btnConfirmCode.classList.toggle('hidden', !canConfirmThisWave);
+    if (btnCodingConfirm) {
+      btnCodingConfirm.classList.toggle('hidden', !isPrepPhase);
+      btnCodingConfirm.disabled = !canConfirmThisWave;
+      btnCodingConfirm.textContent = mePlayer && mePlayer.prepConfirmed
+        ? '⏳ 等隊友確認中'
+        : '✅ 確定程式・開始出怪';
+    }
+
     const isWaitingFirst = Boolean(g.firstWaveWaitingStart && g.status === 'playing');
-    if (firstWavePrepCta) firstWavePrepCta.classList.toggle('hidden', !isWaitingFirst);
-    if (btnStartWave1) btnStartWave1.classList.toggle('hidden', !isWaitingFirst);
-    if (btnTestDummy) btnTestDummy.classList.toggle('hidden', !(g.status === 'playing' && (isWaitingFirst || g.waveDelay > 0)));
-    btnSkipWave.classList.toggle('hidden', isWaitingFirst || g.waveDelay <= 0 || g.status !== 'playing');
+    if (firstWavePrepCta) firstWavePrepCta.classList.toggle('hidden', !isPrepPhase);
+    if (btnStartWave1) btnStartWave1.classList.toggle('hidden', true);
+    if (btnTestDummy) btnTestDummy.classList.toggle('hidden', !(g.status === 'playing' && (isWaitingFirst || isPrepPhase || g.waveDelay > 0)));
+    btnSkipWave.classList.toggle('hidden', isPrepPhase || isWaitingFirst || g.waveDelay <= 0 || g.status !== 'playing');
     const modStr = g.waveModifier ? `【${g.waveModifier.label}】 ` : '';
-    waveHintBox.textContent = isWaitingFirst
-      ? '🛠️ 備戰中：先去「寫積木程式」設砲塔'
+    waveHintBox.textContent = isPrepPhase
+      ? `🛠️ 備戰限時 ${prepSec}s · ${g.waveTitle}`
       : `🌊 ${g.waveTitle}${modStr ? ' · ' + modStr : ''}`;
 
     updateSkillButtons(g);
@@ -2692,7 +2868,7 @@
     const canEdit = myTurn && canEditBlocks();
     const isEditingInput = canEdit && scratchBlocksList.contains(document.activeElement)
       && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT');
-    if ((!dirtyDraft && !deployInFlight && !isEditingInput) || !myTurn) {
+    if ((!dirtyDraft && !deployInFlight && !isEditingInput) || !myTurn || !canEdit) {
       syncEditorFromServer(currentTurret);
     } else {
       renderWorkspaceBlocks();
@@ -2700,14 +2876,19 @@
 
     btnDeployTurret.disabled = !canEdit;
     if (btnApplyAndPlay) {
-      btnApplyAndPlay.disabled = !myTurn || g.status === 'victory' || g.status === 'defeat';
+      btnApplyAndPlay.disabled = g.status === 'victory' || g.status === 'defeat';
+      btnApplyAndPlay.textContent = canEdit ? '🎮 套用並回戰場' : '🎮 回戰場';
     }
     btnSaveFn.disabled = !(canEditBlocks() && (myTurn || room.turnMode === 'sync'));
-    btnDeployTurret.textContent = myTurn
-      ? '🚀 套用積木'
-      : (room.turnMode === 'sync'
-        ? `🟪 ${currentTurret.id} 由隊友控制`
-        : `⏳ 等待 ${room.activeTurnNickname || '隊友'}`);
+    if (isCodeLocked) {
+      btnDeployTurret.textContent = '🔒 已鎖定到下波';
+    } else {
+      btnDeployTurret.textContent = myTurn
+        ? '🚀 套用積木'
+        : (room.turnMode === 'sync'
+          ? `🟪 ${currentTurret.id} 由隊友控制`
+          : `⏳ 等待 ${room.activeTurnNickname || '隊友'}`);
+    }
 
     renderFunctionList(g.functions, currentTurret, canEdit);
 

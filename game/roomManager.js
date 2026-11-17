@@ -25,6 +25,8 @@ const {
 } = require('./engine');
 
 const TURN_DURATION_SECONDS = 45;
+const PREP_DURATION_SOLO_SEC = 45;
+const PREP_DURATION_COOP_SEC = 60;
 
 class RoomManager {
   constructor() {
@@ -60,6 +62,7 @@ class RoomManager {
     gameMode = 'classic',
     timeLimitSeconds = TIMED_ENDLESS_DURATION_SEC,
     turnDuration = null,
+    prepDuration = null,
     mapId = 'classic_s',
     coopMode = 'turn'
   } = {}) {
@@ -75,6 +78,10 @@ class RoomManager {
     const validTurnSec = turnDuration !== null && turnDuration !== undefined && Number(turnDuration) >= 10
       ? Math.min(300, Math.round(Number(turnDuration)))
       : defaultTurnSec;
+    const defaultPrepSec = validMaxPlayers >= 2 ? PREP_DURATION_COOP_SEC : PREP_DURATION_SOLO_SEC;
+    const validPrepSec = prepDuration !== null && prepDuration !== undefined && Number(prepDuration) >= 1
+      ? Math.min(300, Number(prepDuration))
+      : defaultPrepSec;
     const validTimeLimit = Math.max(60, Number(timeLimitSeconds) || TIMED_ENDLESS_DURATION_SEC);
     const roomCode = this.normalizeCode(code) || this.generateRoomCode(validGrade);
 
@@ -111,6 +118,10 @@ class RoomManager {
       turnNumber: 1,
       turnDuration: validTurnSec,
       turnTimeLeft: validTurnSec,
+      wavePhase: 'prep', // 'prep' | 'combat'
+      codeLocked: false,
+      prepDuration: validPrepSec,
+      prepTimeLeft: validPrepSec,
       game: createGameState({
         grade: validGrade,
         maxWaves: Number(maxWaves) || 8,
@@ -351,7 +362,8 @@ class RoomManager {
       slotIndex: room.players.length + 1,
       ready: room.phase === 'playing',
       connected: true,
-      inCodingView: false
+      inCodingView: false,
+      prepConfirmed: false
     };
 
     room.players.push(player);
@@ -427,10 +439,15 @@ class RoomManager {
   startRoomGame(room) {
     room.phase = 'playing';
     room.game.status = 'playing';
+    room.wavePhase = 'prep';
+    room.game.wavePhase = 'prep';
+    room.codeLocked = false;
+    room.prepTimeLeft = room.prepDuration;
+    room.players.forEach((p) => { p.prepConfirmed = false; });
     room.activeTurnPlayerId = room.players[0] ? room.players[0].id : null;
     room.turnNumber = 1;
     room.turnTimeLeft = room.turnDuration;
-    this.logAction(room, '系統', '全體進入戰場備戰！放好開局積木後，請按「🚀 開始第 1 波倒數」計時出怪！');
+    this.logAction(room, '系統', `全體進入戰場備戰！請在 ${Math.ceil(room.prepDuration)} 秒內查看敵人情報並寫好積木，確定程式後即鎖定開戰！`);
   }
 
   forceStartRoom(code) {
@@ -460,6 +477,13 @@ class RoomManager {
     }
     if (room.game.status === 'victory' || room.game.status === 'defeat') {
       return { ok: false, error: '本局已經結束' };
+    }
+    if (room.codeLocked || room.wavePhase === 'combat') {
+      return { ok: false, error: '🔒 本波程式已鎖定！請專心守住這一波，等下一波開始才會解鎖修改。' };
+    }
+    const editingPlayer = room.players.find((p) => p.id === playerId);
+    if (editingPlayer && editingPlayer.prepConfirmed) {
+      return { ok: false, error: '🔒 你已確定本波程式，等待隊友確認或倒數結束即開戰！' };
     }
     if (room.game.status === 'paused' && room.pausedByTeacher) {
       return { ok: false, error: '老師目前暫停戰場中' };
@@ -711,7 +735,7 @@ class RoomManager {
     room.pausedByTeacher = false;
     room.pausedByUser = false;
     room.pausedByCoding = false;
-    room.players.forEach((p) => { p.inCodingView = false; });
+    this.beginNextWavePrep(room);
     this.logAction(room, player.nickname, '開啟了「🔥 無盡生存模式」！');
     return { ok: true, room };
   }
@@ -778,17 +802,90 @@ class RoomManager {
   syncRoomPauseState(room) {
     if (!room || !room.game || room.phase !== 'playing') return;
     if (room.game.status === 'victory' || room.game.status === 'defeat') return;
-    const connectedPlayers = room.players.filter((p) => p.connected);
-    let codingPaused = false;
-    if (room.turnMode === 'turn' && connectedPlayers.length >= 2) {
-      const activePlayer = connectedPlayers.find((p) => p.id === room.activeTurnPlayerId);
-      codingPaused = Boolean(activePlayer && activePlayer.inCodingView);
-    } else {
-      codingPaused = connectedPlayers.some((p) => p.inCodingView);
-    }
-    room.pausedByCoding = codingPaused;
-    const shouldPause = Boolean(room.pausedByTeacher || room.pausedByUser || room.pausedByCoding);
+    // Prep phase holds wave spawning via game.wavePhase='prep' while keeping prepTimeLeft & test dummies active.
+    // Combat phase locks code editing until the next wave so view switching cannot stall the wave.
+    room.pausedByCoding = false;
+    const shouldPause = Boolean(room.pausedByTeacher || room.pausedByUser);
     room.game.status = shouldPause ? 'paused' : 'playing';
+  }
+
+  lockAndStartWaveCombat(room, actorLabel = '系統', initialWaveDelay = 0.8) {
+    if (!room || !room.game) return;
+    for (const p of room.players) {
+      if (p.connected) {
+        this.flushPendingDraftsForPlayer(room, p.id, actorLabel);
+      }
+      p.prepConfirmed = false;
+      p.inCodingView = false;
+    }
+    room.wavePhase = 'combat';
+    room.game.wavePhase = 'combat';
+    room.codeLocked = true;
+    room.prepTimeLeft = 0;
+    room.game.firstWaveWaitingStart = false;
+    room.game.waveDelay = initialWaveDelay;
+    // Clear test dummies & projectiles before real wave begins
+    room.game.monsters = room.game.monsters.filter((m) => !m.isTestDummy);
+    room.game.projectiles = [];
+    for (const t of room.game.turrets) {
+      if (t.active && t.loopMode === 'none') {
+        t.ammoRemaining = 3;
+      }
+    }
+    room.turnTimeLeft = room.turnDuration;
+    this.syncRoomPauseState(room);
+    this.logAction(room, actorLabel, `🔒 程式已鎖定，第 ${room.game.wave} 波怪物進攻！（守完本波才會解鎖修改）`);
+  }
+
+  beginNextWavePrep(room) {
+    if (!room || !room.game) return;
+    room.wavePhase = 'prep';
+    room.game.wavePhase = 'prep';
+    room.codeLocked = false;
+    room.prepTimeLeft = room.prepDuration;
+    room.pausedByCoding = false;
+    room.players.forEach((p) => {
+      p.prepConfirmed = false;
+      p.inCodingView = false;
+    });
+    this.syncRoomPauseState(room);
+    this.logAction(
+      room,
+      '系統',
+      `🔓 第 ${room.game.wave} 波備戰解鎖！請在 ${Math.ceil(room.prepDuration)} 秒內查看敵人情報並調整積木`
+    );
+  }
+
+  confirmWaveCode(code, playerId, forceStart = false) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    if (room.phase !== 'playing') return { ok: false, error: '尚未進入戰場' };
+    if (room.wavePhase !== 'prep' || room.codeLocked) {
+      return { ok: false, error: '🔒 本波程式已經鎖定，正與怪物交戰中！' };
+    }
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效玩家' };
+
+    this.flushPendingDraftsForPlayer(room, playerId, '確定本波程式');
+    player.prepConfirmed = true;
+    player.inCodingView = false;
+
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    const waitingPartner = !forceStart && connectedPlayers.length >= 2 && connectedPlayers.some((p) => !p.prepConfirmed);
+    if (waitingPartner) {
+      const nextPartner = connectedPlayers.find((p) => !p.prepConfirmed && p.id !== playerId);
+      if (room.turnMode === 'turn' && nextPartner && room.activeTurnPlayerId === playerId) {
+        room.activeTurnPlayerId = nextPartner.id;
+        room.turnNumber += 1;
+        room.turnTimeLeft = room.turnDuration;
+      }
+      this.syncRoomPauseState(room);
+      this.logAction(room, player.nickname, '已確定本波程式，等待隊友確認後開戰！');
+      return { ok: true, room, locked: false, waitingPartner: true };
+    }
+
+    this.lockAndStartWaveCombat(room, `${player.nickname} 已確定程式`, room.game.wave === 1 ? 1.2 : 0.8);
+    return { ok: true, room, locked: true, waitingPartner: false };
   }
 
   setPlayerViewMode(code, playerId, mode) {
@@ -851,8 +948,17 @@ class RoomManager {
 
     const res = startFirstWaveCountdown(room.game);
     if (!res.ok) return res;
+    room.wavePhase = 'combat';
+    room.game.wavePhase = 'combat';
+    room.codeLocked = true;
+    room.prepTimeLeft = 0;
+    room.players.forEach((p) => {
+      p.prepConfirmed = false;
+      p.inCodingView = false;
+    });
     room.turnTimeLeft = room.turnDuration;
-    this.logAction(room, actorName, `按下「🚀 開始第 1 波倒數」，${Math.ceil(res.waveDelay)} 秒倒數計時啟動！`);
+    this.syncRoomPauseState(room);
+    this.logAction(room, actorName, `按下「🚀 開始第 1 波倒數」，程式已鎖定，${Math.ceil(res.waveDelay)} 秒後怪物進攻！`);
     return { ok: true, room, waveDelay: res.waveDelay };
   }
 
@@ -884,7 +990,14 @@ class RoomManager {
     room.pausedByTeacher = false;
     room.pausedByUser = false;
     room.pausedByCoding = false;
-    room.players.forEach((p) => { p.inCodingView = false; });
+    room.wavePhase = 'prep';
+    room.game.wavePhase = 'prep';
+    room.codeLocked = false;
+    room.prepTimeLeft = room.prepDuration;
+    room.players.forEach((p) => {
+      p.inCodingView = false;
+      p.prepConfirmed = false;
+    });
     room.phase = room.players.length > 0 ? 'playing' : 'lobby';
     if (room.phase === 'playing') {
       room.game.status = 'playing';
@@ -1009,6 +1122,16 @@ class RoomManager {
       if (room.phase !== 'playing') continue;
       if (room.game.status !== 'playing') continue;
 
+      const prevWave = room.game.wave;
+
+      // Timed wave coding preparation window (pauses only during teacher/user pause or relic choice)
+      if (room.wavePhase === 'prep' && !room.game.pendingRelicChoice) {
+        room.prepTimeLeft = Math.max(0, (room.prepTimeLeft || 0) - dt);
+        if (room.prepTimeLeft <= 0) {
+          this.lockAndStartWaveCombat(room, '寫程式倒數時間到', 0.8);
+        }
+      }
+
       // Turn timer rotation in 2-player turn mode (paused during initial Wave 1 prep before Start button)
       if (room.turnMode === 'turn' && !room.game.firstWaveWaitingStart) {
         const connectedPlayers = room.players.filter((p) => p.connected);
@@ -1031,6 +1154,9 @@ class RoomManager {
       }
 
       advanceGameTick(room.game, dt);
+      if (room.game.status === 'playing' && room.game.wave > prevWave) {
+        this.beginNextWavePrep(room);
+      }
       updatedRooms.push(room);
     }
     return updatedRooms;
@@ -1066,8 +1192,13 @@ class RoomManager {
         ownedTurrets: this.getOwnedTurretsForPlayer(room, p),
         ready: p.ready,
         connected: p.connected,
-        inCodingView: Boolean(p.inCodingView)
+        inCodingView: Boolean(p.inCodingView),
+        prepConfirmed: Boolean(p.prepConfirmed)
       })),
+      wavePhase: room.wavePhase || 'prep',
+      codeLocked: Boolean(room.codeLocked),
+      prepDuration: room.prepDuration || PREP_DURATION_SOLO_SEC,
+      prepTimeLeft: Math.max(0, Math.ceil(room.prepTimeLeft || 0)),
       pausedByTeacher: Boolean(room.pausedByTeacher),
       pausedByUser: Boolean(room.pausedByUser),
       pausedByCoding: Boolean(room.pausedByCoding),
@@ -1105,6 +1236,8 @@ class RoomManager {
 
 module.exports = {
   RoomManager,
-  TURN_DURATION_SECONDS
+  TURN_DURATION_SECONDS,
+  PREP_DURATION_SOLO_SEC,
+  PREP_DURATION_COOP_SEC
 };
 

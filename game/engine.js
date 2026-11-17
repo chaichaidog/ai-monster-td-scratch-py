@@ -278,6 +278,45 @@ function buildWaveSpawnQueue(waveIndex, gradeCfg, difficulty = 'standard', modif
   return queue;
 }
 
+function getEnemyWeaknessTip(template) {
+  if (!template) return '建議搭配「迴圈」與「條件」積木應戰';
+  if (template.isBoss) return '克制：條件 <是Boss> 切換重砲 / 雷射集火';
+  if (template.type === 'shielded' || template.maxShield > 0) return '克制：雷射對護盾×2！搭配 <有護盾>';
+  if (template.type === 'armored' || template.armor > 0) return '克制：重砲穿甲×1.4！搭配 <護甲高>';
+  if (template.type === 'swarm') return '克制：散彈 AoE 範圍清怪＋掃描迴圈';
+  if (template.type === 'fast') return '克制：冰霜緩速或高射速機槍攔截';
+  if (template.type === 'medic') return '克制：優先高傷集火，別讓它補血';
+  if (template.type === 'stealth') return '克制：電漿 / 雷射偵測破隱＋基地前攔截';
+  return '克制：用連發迴圈提升穩定火力';
+}
+
+function summarizeWaveIntel(queue = []) {
+  const byType = new Map();
+  for (const item of queue) {
+    const t = item && item.template ? item.template : item;
+    if (!t || !t.type) continue;
+    const existing = byType.get(t.type);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      byType.set(t.type, {
+        type: t.type,
+        name: t.name || t.type,
+        tag: t.tag || '',
+        count: 1,
+        hp: t.maxHp || t.hp || 0,
+        shield: t.maxShield || t.shield || 0,
+        speed: t.speed || 0,
+        armor: t.armor || 0,
+        isBoss: Boolean(t.isBoss),
+        color: t.color || '#3b82f6',
+        tip: getEnemyWeaknessTip(t)
+      });
+    }
+  }
+  return Array.from(byType.values());
+}
+
 function createGameState({
   grade = 'G7',
   maxWaves = WAVES.length,
@@ -298,6 +337,8 @@ function createGameState({
   const totalWaves = isTimed20 ? 0 : clamp(Number(maxWaves) || WAVES.length, 4, WAVES.length);
   const cleanLimit = Math.max(60, Number(timeLimitSeconds) || TIMED_ENDLESS_DURATION_SEC);
 
+  const spawnQueue = buildWaveSpawnQueue(0, gradeCfg, difficulty, null, mapDef.id);
+
   return {
     grade: gradeCfg.id,
     difficulty,
@@ -308,6 +349,7 @@ function createGameState({
     hazardSpawnTimer: 32,
     gameMode: isTimed20 ? 'timed20' : 'classic',
     status: 'playing', // 'playing' | 'paused' | 'victory' | 'defeat'
+    wavePhase: 'combat', // 'prep' | 'combat'
     endlessMode: isTimed20,
     timedMode: isTimed20,
     timeLimitSeconds: cleanLimit,
@@ -327,7 +369,8 @@ function createGameState({
     waveModifier: null,
     waveDelay: 15.0,
     waveSpawnClock: 0,
-    spawnQueue: buildWaveSpawnQueue(0, gradeCfg, difficulty, null, mapDef.id),
+    spawnQueue,
+    waveIntel: summarizeWaveIntel(spawnQueue),
     baseHp: gradeCfg.baseMaxHp,
     baseMaxHp: gradeCfg.baseMaxHp,
     computeBudget: gradeCfg.startingBudget,
@@ -698,6 +741,7 @@ function startFirstWaveCountdown(state) {
     return { ok: false, error: '第 1 波倒數計時已經啟動囉！' };
   }
   state.firstWaveWaitingStart = false;
+  state.wavePhase = 'combat';
   if (state.waveDelay <= 0) {
     state.waveDelay = 15.0;
   }
@@ -721,7 +765,7 @@ function spawnTestDummy(state) {
   if (state.status !== 'playing') {
     return { ok: false, error: '目前非進行中，無法測試' };
   }
-  if (!state.firstWaveWaitingStart && state.waveDelay <= 0) {
+  if (!state.firstWaveWaitingStart && state.wavePhase !== 'prep' && state.waveDelay <= 0) {
     return { ok: false, error: '目前已經在正式交戰中，可直接觀察砲塔作戰！' };
   }
   const activeDummies = state.monsters.filter((m) => m.isTestDummy);
@@ -1230,7 +1274,7 @@ function advanceGameTick(state, dt) {
   if (state.firstWaveWaitingStart && (state.wave > 1 || state.waveDelay <= 0 || state.finalBossSpawned)) {
     state.firstWaveWaitingStart = false;
   }
-  const isPrepWaitingStart = Boolean(state.firstWaveWaitingStart);
+  const isPrepWaitingStart = Boolean(state.firstWaveWaitingStart || state.wavePhase === 'prep');
 
   if (!isPrepWaitingStart) {
     state.elapsed += dt;
@@ -1638,6 +1682,7 @@ function advanceGameTick(state, dt) {
     state.waveDelay = 10.0;
     state.waveSpawnClock = 0;
     state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier, state.mapId);
+    state.waveIntel = summarizeWaveIntel(state.spawnQueue);
     state.computeBudget += gradeCfg.budgetPerWave;
     state.coins += 8;
     state.score += 60;
@@ -1677,6 +1722,7 @@ function continueEndlessMode(state) {
   state.waveDelay = 8.0;
   state.waveSpawnClock = 0;
   state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier, state.mapId);
+  state.waveIntel = summarizeWaveIntel(state.spawnQueue);
   state.computeBudget += gradeCfg.budgetPerWave;
   state.coins += 18;
   return true;
@@ -2172,12 +2218,16 @@ function serializeGameState(state) {
     finalBossCleared: Boolean(state.finalBossCleared),
     elapsed: Number(state.elapsed.toFixed(2)),
     firstWaveWaitingStart: Boolean(state.firstWaveWaitingStart),
+    wavePhase: state.wavePhase || 'combat',
     wave: state.wave,
     totalWaves: state.totalWaves,
     waveTitle: state.waveTitle,
     waveHint: state.waveHint,
     waveModifier: state.waveModifier,
     waveDelay: Number(state.waveDelay.toFixed(1)),
+    waveIntel: Array.isArray(state.waveIntel) && state.waveIntel.length > 0
+      ? state.waveIntel
+      : summarizeWaveIntel(state.spawnQueue),
     baseHp: state.baseHp,
     baseMaxHp: state.baseMaxHp,
     computeBudget: state.computeBudget,
@@ -2315,5 +2365,6 @@ module.exports = {
   spawnBonusChest,
   checkBountyProgress,
   computeEndgameRank,
+  summarizeWaveIntel,
   serializeGameState
 };

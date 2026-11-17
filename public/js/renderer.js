@@ -363,11 +363,11 @@ class BattlefieldRenderer {
     const w = this.meta.mapWidth;
     const h = this.meta.mapHeight;
 
-    // 1. Background & Cyber Grid
-    ctx.fillStyle = '#060c18';
+    // 1. Background & Daylight Tactical Grid
+    ctx.fillStyle = '#e8f2ff';
     ctx.fillRect(0, 0, w, h);
 
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.06)';
+    ctx.strokeStyle = 'rgba(2, 132, 199, 0.12)';
     ctx.lineWidth = 1;
     for (let gx = 0; gx <= w; gx += 40) {
       ctx.beginPath();
@@ -390,20 +390,20 @@ class BattlefieldRenderer {
     ctx.lineJoin = 'round';
 
     for (const pts of paths) {
-      ctx.strokeStyle = 'rgba(14, 165, 233, 0.14)';
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.16)';
       ctx.lineWidth = 42;
       ctx.beginPath();
       pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
       ctx.stroke();
 
-      ctx.strokeStyle = '#101d35';
+      ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 30;
       ctx.beginPath();
       pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
       ctx.stroke();
 
       ctx.save();
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.48)';
       ctx.lineWidth = 2.5;
       ctx.setLineDash([12, 16]);
       ctx.lineDashOffset = -this.animTime * 48;
@@ -716,17 +716,17 @@ class BattlefieldRenderer {
 
     if (!this.mini && this.latestGame.status === 'paused') {
       ctx.save();
-      ctx.fillStyle = 'rgba(6, 12, 24, 0.55)';
+      ctx.fillStyle = 'rgba(241, 245, 249, 0.72)';
       ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#fde68a';
+      ctx.fillStyle = '#b45309';
       ctx.font = 'bold 28px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('⏸ 暫停思考中', w / 2, h / 2);
       ctx.restore();
-    } else if (!this.mini && this.latestGame.firstWaveWaitingStart && this.latestGame.status === 'playing') {
+    } else if (!this.mini && (this.latestGame.firstWaveWaitingStart || this.latestGame.wavePhase === 'prep') && this.latestGame.status === 'playing') {
       ctx.save();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-      ctx.strokeStyle = 'rgba(52, 211, 153, 0.7)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
+      ctx.strokeStyle = 'rgba(5, 150, 105, 0.7)';
       ctx.lineWidth = 2;
       const bw = 470;
       const bh = 44;
@@ -735,15 +735,15 @@ class BattlefieldRenderer {
       else ctx.rect(w / 2 - bw / 2, 14, bw, bh);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#6ee7b7';
+      ctx.fillStyle = '#047857';
       ctx.font = 'bold 14px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('🛠️ 備戰準備中：排好開局積木（可先按🧪試射），按下「🚀 開始第 1 波倒數」才計時！', w / 2, 41);
+      ctx.fillText('🛠️ 備戰寫程式中：可先按🧪試射，確定程式或倒數結束後鎖定開戰！', w / 2, 41);
       ctx.restore();
     } else if (!this.mini && this.latestGame.waveDelay > 0 && this.latestGame.status === 'playing') {
       ctx.save();
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.strokeStyle = 'rgba(2, 132, 199, 0.55)';
       ctx.lineWidth = 1.5;
       const bw = 310;
       const bh = 44;
@@ -752,7 +752,7 @@ class BattlefieldRenderer {
       else ctx.rect(w / 2 - bw / 2, 14, bw, bh);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#e0f2fe';
+      ctx.fillStyle = '#0369a1';
       ctx.font = 'bold 15px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(`第 ${this.latestGame.wave} 波倒數 ${this.latestGame.waveDelay.toFixed(1)} 秒...`, w / 2, 41);
@@ -778,7 +778,7 @@ class BattlefieldRenderer {
     ctx.fillStyle = 'rgba(244, 63, 94, 0.35)';
     ctx.fill();
     if (!this.mini) {
-      ctx.fillStyle = '#fda4af';
+      ctx.fillStyle = '#be123c';
       ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('AI 裂縫', x, y - 28);
@@ -814,11 +814,11 @@ class BattlefieldRenderer {
     ctx.stroke();
 
     if (!this.mini) {
-      ctx.fillStyle = '#d1fae5';
+      ctx.fillStyle = '#ffffff';
       ctx.font = 'bold 12px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('主基地', x, y + 4);
-      ctx.fillStyle = '#a7f3d0';
+      ctx.fillStyle = hpRatio > 0.35 ? '#047857' : '#be123c';
       ctx.fillText(`HP ${this.latestGame ? this.latestGame.baseHp : 100}`, x, y + 44);
     }
     ctx.restore();
@@ -894,31 +894,31 @@ class BattlefieldRenderer {
       const ownerTag = (Array.isArray(this.ownedTurrets) && this.ownedTurrets.length < 4)
         ? (this.ownedTurrets.includes(t.id) ? ' (你)' : ' (隊友)')
         : '';
-      ctx.fillStyle = (Array.isArray(this.ownedTurrets) && !this.ownedTurrets.includes(t.id)) ? '#c084fc' : '#e2e8f0';
+      ctx.fillStyle = (Array.isArray(this.ownedTurrets) && !this.ownedTurrets.includes(t.id)) ? '#7c3aed' : '#0f172a';
       ctx.font = 'bold 11px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(`${t.id}${ownerTag}`, 0, 35);
 
       if (t.inHazard) {
-        ctx.fillStyle = '#fb7185';
+        ctx.fillStyle = '#be123c';
         ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
         ctx.fillText('☠️ 減速霧中', 0, 47);
       } else if (t.zoneBuffLabel) {
-        ctx.fillStyle = '#fde047';
+        ctx.fillStyle = '#b45309';
         ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
         ctx.fillText(t.zoneBuffLabel, 0, 47);
       }
 
       if (isDormant) {
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = '#475569';
         ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
         ctx.fillText('💤 空積木未啟動', 0, -27);
       } else if (outOfLoopAmmo) {
-        ctx.fillStyle = '#fbbf24';
+        ctx.fillStyle = '#d97706';
         ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
         ctx.fillText('🔁 缺迴圈已停!', 0, -27);
       } else if (t.ammoRemaining > 0) {
-        ctx.fillStyle = '#fde68a';
+        ctx.fillStyle = '#b45309';
         ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
         ctx.fillText(`點放餘 ${t.ammoRemaining} 發`, 0, -27);
       } else if (t.loopStep > 0) {
@@ -1026,7 +1026,7 @@ class BattlefieldRenderer {
     }
 
     if (!this.mini && (m.isTestDummy || m.isBoss || m.type === 'gold_slime' || m.type === 'splitter' || m.type === 'medic' || m.stealthed)) {
-      ctx.fillStyle = m.isTestDummy ? '#38bdf8' : (m.type === 'gold_slime' ? '#fde047' : (m.type === 'medic' ? '#86efac' : (m.stealthed ? '#cbd5e1' : '#fda4af')));
+      ctx.fillStyle = m.isTestDummy ? '#0369a1' : (m.type === 'gold_slime' ? '#b45309' : (m.type === 'medic' ? '#047857' : (m.stealthed ? '#475569' : '#be123c')));
       ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
       const label = m.isTestDummy

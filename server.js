@@ -557,6 +557,23 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack({ ok: res.ok, status: res.status, error: res.error });
   });
 
+  socket.on('student:confirm_wave_code', (_payload, ack) => {
+    if (!ensureStudentJoined(socket, ack)) return;
+    const res = roomManager.confirmWaveCode(socket.data.roomCode, socket.data.playerId);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') {
+      ack({
+        ok: res.ok,
+        locked: Boolean(res.locked),
+        waitingPartner: Boolean(res.waitingPartner),
+        error: res.error
+      });
+    }
+  });
+
   socket.on('student:skip_wave_delay', (_payload, ack) => {
     if (!ensureStudentJoined(socket, ack)) return;
     const res = roomManager.handleSkipWaveDelay(socket.data.roomCode, socket.data.playerId);
