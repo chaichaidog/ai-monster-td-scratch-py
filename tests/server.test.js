@@ -34,6 +34,10 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.ok(homeHtml.includes('input-teacher-pin'));
     assert.ok(homeHtml.includes('relic-modal'));
     assert.ok(homeHtml.includes('chest-quiz-modal'));
+    assert.ok(homeHtml.includes('btn-start-wave-1'));
+    assert.ok(homeHtml.includes('btn-overlay-start-wave'));
+    assert.ok(homeHtml.includes('btn-test-dummy'));
+    assert.ok(homeHtml.includes('first-wave-prep-cta'));
     assert.ok(homeHtml.includes('feedback-form-box'));
     assert.ok(homeHtml.includes('btn-submit-feedback'));
     assert.ok(homeHtml.includes('turn-handoff-toast'));
@@ -44,6 +48,8 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.ok(teacherHtml.includes('老師控制台'));
     assert.ok(teacherHtml.includes('btn-quick-setup-89'));
     assert.ok(teacherHtml.includes('btn-quick-setup-coop'));
+    assert.ok(teacherHtml.includes('spec-btn-start-wave'));
+    assert.ok(teacherHtml.includes('spec-btn-chest'));
     assert.ok(teacherHtml.includes('spec-btn-coop-join'));
     assert.ok(teacherHtml.includes('teacher-feedback-list'));
     assert.ok(teacherHtml.includes('create-game-mode'));

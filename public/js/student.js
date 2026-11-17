@@ -105,9 +105,14 @@
   const turnTitle = document.getElementById('turn-title');
   const turnSubtitle = document.getElementById('turn-subtitle');
   const turnTimerPill = document.getElementById('turn-timer-pill');
+  const btnTestDummy = document.getElementById('btn-test-dummy');
+  const btnStartWave1 = document.getElementById('btn-start-wave-1');
   const btnSkipWave = document.getElementById('btn-skip-wave');
   const btnEndTurn = document.getElementById('btn-end-turn');
   const teammateTipsBar = document.getElementById('teammate-tips-bar');
+  const firstWavePrepCta = document.getElementById('first-wave-prep-cta');
+  const btnOverlayTestDummy = document.getElementById('btn-overlay-test-dummy');
+  const btnOverlayStartWave = document.getElementById('btn-overlay-start-wave');
 
   const battleCanvas = document.getElementById('battle-canvas');
   const skillBar = document.getElementById('skill-bar');
@@ -640,6 +645,34 @@
       if (res && !res.ok && res.error) showToast(res.error);
     });
   });
+
+  function triggerStartFirstWave() {
+    sound.ensureContext();
+    socket.emit('student:start_first_wave', {}, (res) => {
+      if (!res || !res.ok) {
+        if (res && res.error) showToast(res.error);
+        return;
+      }
+      sound.playWaveAlert();
+      showToast(`⏱️ 倒數計時啟動！${Math.ceil(res.waveDelay || 15)} 秒後第 1 波怪物出動！`, 4200);
+    });
+  }
+
+  function triggerSpawnTestDummy() {
+    sound.ensureContext();
+    socket.emit('student:spawn_test_dummy', {}, (res) => {
+      if (!res || !res.ok) {
+        if (res && res.error) showToast(res.error);
+        return;
+      }
+      showToast('🧪 模擬訓練靶怪已出發！觀察你的砲塔射程、移動與如果條件有沒有生效！', 3800);
+    });
+  }
+
+  if (btnStartWave1) btnStartWave1.addEventListener('click', triggerStartFirstWave);
+  if (btnOverlayStartWave) btnOverlayStartWave.addEventListener('click', triggerStartFirstWave);
+  if (btnTestDummy) btnTestDummy.addEventListener('click', triggerSpawnTestDummy);
+  if (btnOverlayTestDummy) btnOverlayTestDummy.addEventListener('click', triggerSpawnTestDummy);
 
   btnSkipWave.addEventListener('click', () => {
     socket.emit('student:skip_wave_delay');
@@ -1552,7 +1585,17 @@
         : `座標 (${cfg.targetX}, ${cfg.targetY})`;
       const hasFnMaster = Array.isArray(g.relics) && g.relics.includes('fn_master');
       const fnTag = cfg.boundFunctionId ? (hasFnMaster ? '（函式 7 折!）' : '（函式 85 折!）') : '';
-      scratchDiagnostic.textContent = `✅ [${wInfo}]${fnTag} · 位置 ${moveLabel} · 秒傷 ${dps} · 總算力 ${totalProjected}/${g.computeBudget}`;
+      let ctTip = '';
+      if (turret.inHazard) {
+        ctTip = ' · ⚠️ 正處減速霧，快用📍移動躲開！';
+      } else if (turret.zoneBuffLabel) {
+        ctTip = ` · 🌟 ${turret.zoneBuffLabel}生效中`;
+      } else if (cfg.weapon === 'frost') {
+        ctTip = ' · ❄️搭配電漿/閃電可觸發「超導碎冰+30%傷」！';
+      } else if (cfg.conditionType === 'none' && g.wave >= 2) {
+        ctTip = ' · 💡可加🟨如果<有護盾>打更痛';
+      }
+      scratchDiagnostic.textContent = `✅ [${wInfo}]${fnTag} · 位置 ${moveLabel} · 秒傷 ${dps} · 算力 ${totalProjected}/${g.computeBudget}${ctTip}`;
     }
 
     const nextHtml = Transpiler.blocksToHighlightedPythonHtml(
@@ -2197,11 +2240,15 @@
       const rem = Math.max(0, Math.round(g.timeRemaining || 0));
       const mm = String(Math.floor(rem / 60)).padStart(2, '0');
       const ss = String(rem % 60).padStart(2, '0');
-      hudWave.textContent = g.finalBossSpawned
-        ? `🚨 最終BOSS · 波${g.wave}`
-        : `♾️ 波${g.wave} · ⏱️ ${mm}:${ss}`;
+      hudWave.textContent = g.firstWaveWaitingStart
+        ? `🛠️ 備戰第1波 · ⏱️ ${mm}:${ss} 尚未計時`
+        : (g.finalBossSpawned
+          ? `🚨 最終BOSS · 波${g.wave}`
+          : `♾️ 波${g.wave} · ⏱️ ${mm}:${ss}`);
     } else {
-      hudWave.textContent = g.endlessMode ? `🔥 無盡第 ${g.wave} 波` : `${g.wave} / ${g.totalWaves}`;
+      hudWave.textContent = g.firstWaveWaitingStart
+        ? `🛠️ 備戰中 · 第 1/${g.totalWaves} 波`
+        : (g.endlessMode ? `🔥 無盡第 ${g.wave} 波` : `${g.wave} / ${g.totalWaves}`);
     }
     const hpPct = Math.max(0, Math.round((g.baseHp / g.baseMaxHp) * 100));
     hudHpFill.style.width = `${hpPct}%`;
@@ -2313,7 +2360,7 @@
           ? '老師正在旁邊幫你加油＆撿場上金幣！拼完按「🚀 套用」或右側換老師示範。'
           : '拼完按下「🚀 套用這組 Scratch 積木到砲塔」，完成調整可按右側換隊友接手。';
       }
-      turnTimerPill.textContent = `剩餘 ${room.turnTimeLeft} 秒`;
+      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰暫停計時（可點換手）' : `剩餘 ${room.turnTimeLeft} 秒`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.remove('hidden');
       teammateTipsBar.classList.add('hidden');
@@ -2329,7 +2376,7 @@
         turnTitle.textContent = `⏳ 隊友「${room.activeTurnNickname || '夥伴'}」正在調整砲塔積木...`;
         turnSubtitle.textContent = '你可以點地圖撿 🪙 金幣道具、點空白處發出 🎯 集火標記、或用下方快速提醒給隊友！';
       }
-      turnTimerPill.textContent = `換手倒數 ${room.turnTimeLeft} 秒`;
+      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰暫停計時' : `換手倒數 ${room.turnTimeLeft} 秒`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.add('hidden');
 
@@ -2349,9 +2396,15 @@
       teammateTipsBar.classList.remove('hidden');
     }
 
-    btnSkipWave.classList.toggle('hidden', g.waveDelay <= 0 || g.status !== 'playing');
+    const isWaitingFirst = Boolean(g.firstWaveWaitingStart && g.status === 'playing');
+    if (firstWavePrepCta) firstWavePrepCta.classList.toggle('hidden', !isWaitingFirst);
+    if (btnStartWave1) btnStartWave1.classList.toggle('hidden', !isWaitingFirst);
+    if (btnTestDummy) btnTestDummy.classList.toggle('hidden', !(g.status === 'playing' && (isWaitingFirst || g.waveDelay > 0)));
+    btnSkipWave.classList.toggle('hidden', isWaitingFirst || g.waveDelay <= 0 || g.status !== 'playing');
     const modStr = g.waveModifier ? `【${g.waveModifier.label}】 ` : '';
-    waveHintBox.textContent = `🌊 ${g.waveTitle} — ${modStr}${g.waveHint}`;
+    waveHintBox.textContent = isWaitingFirst
+      ? '🛠️ 開局備戰提示：時間尚未倒數！先幫砲塔放好「武器＋變數＋重複迴圈」，按下「🚀 開始第 1 波倒數」就會開始計時出怪！（寒霜＋閃電/重砲可觸發 ❄️⚡超導碎冰！）'
+      : `🌊 ${g.waveTitle} — ${modStr}${g.waveHint}`;
 
     updateSkillButtons(g);
 

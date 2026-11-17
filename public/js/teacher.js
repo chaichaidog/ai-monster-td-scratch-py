@@ -40,7 +40,9 @@
   const specGradeBadge = document.getElementById('spec-grade-badge');
   const specCodeBadge = document.getElementById('spec-code-badge');
   const specTitle = document.getElementById('spec-title');
+  const specBtnStartWave = document.getElementById('spec-btn-start-wave');
   const specBtnCoopJoin = document.getElementById('spec-btn-coop-join');
+  const specBtnChest = document.getElementById('spec-btn-chest');
   const specBtnGold = document.getElementById('spec-btn-gold');
   const specBtnPause = document.getElementById('spec-btn-pause');
   const specBtnReset = document.getElementById('spec-btn-reset');
@@ -257,6 +259,7 @@
     if (room.game.status === 'paused') return '⏸ 暫停中';
     if (room.game.status === 'victory') return '🏆 守備勝利';
     if (room.game.status === 'defeat') return '💥 防線失守';
+    if (room.game.firstWaveWaitingStart) return '🛠️ 備戰中(尚未計時)';
     if (room.game.timedMode) {
       const bossTag = room.game.finalBossSpawned ? '🚨終極BOSS!' : `⏳${formatMMSS(room.game.timeRemaining)}`;
       return `♾️ 第 ${room.game.wave} 波 · ${bossTag}`;
@@ -383,6 +386,28 @@
         });
       });
 
+      const btnChest = document.createElement('button');
+      btnChest.type = 'button';
+      btnChest.className = 'btn btn-sm';
+      btnChest.textContent = '🔐 空投寶箱';
+      btnChest.addEventListener('click', () => {
+        socket.emit('teacher:spawn_chest', { code: room.code }, (res) => {
+          if (res && res.ok) showToast(`🔐 已對房號 ${room.code} 空投 Python 密碼寶箱！`);
+          else showToast((res && res.error) || '空投失敗');
+        });
+      });
+
+      const btnStartWave = document.createElement('button');
+      btnStartWave.type = 'button';
+      btnStartWave.className = 'btn btn-emerald btn-sm';
+      btnStartWave.textContent = '🚀 啟動第1波倒數';
+      btnStartWave.addEventListener('click', () => {
+        socket.emit('teacher:start_first_wave', { code: room.code }, (res) => {
+          if (res && res.ok) showToast(`⏱️ 房號 ${room.code} 第 1 波倒數已啟動！`);
+          else if (res && res.error) showToast(res.error);
+        });
+      });
+
       const btnDel = document.createElement('button');
       btnDel.type = 'button';
       btnDel.className = 'btn btn-danger btn-sm';
@@ -394,7 +419,9 @@
       btnRow.appendChild(btnWatch);
       btnRow.appendChild(btnCoopJoin);
       btnRow.appendChild(btnForceStart);
+      btnRow.appendChild(btnStartWave);
       btnRow.appendChild(btnGold);
+      btnRow.appendChild(btnChest);
       btnRow.appendChild(btnPause);
       btnRow.appendChild(btnDel);
 
@@ -416,6 +443,7 @@
         conceptsRow,
         btnCoopJoin,
         btnForceStart,
+        btnStartWave,
         btnPause,
         renderer
       };
@@ -483,6 +511,9 @@
     });
 
     entry.btnForceStart.classList.toggle('hidden', room.phase !== 'lobby' || room.players.length === 0);
+    if (entry.btnStartWave) {
+      entry.btnStartWave.classList.toggle('hidden', !(room.phase === 'playing' && room.game.firstWaveWaitingStart));
+    }
     entry.btnPause.classList.toggle('hidden', room.phase !== 'playing');
     entry.btnPause.textContent = room.game.status === 'paused' ? '▶ 繼續' : '⏸ 暫停';
 
@@ -688,6 +719,9 @@
     specCodeBadge.textContent = `房號 ${room.code}`;
     specTitle.textContent = `${room.name}（${statusLabel(room)}）`;
     specBtnPause.textContent = room.game.status === 'paused' ? '▶ 繼續' : '⏸ 暫停';
+    if (specBtnStartWave) {
+      specBtnStartWave.classList.toggle('hidden', !(room.phase === 'playing' && room.game.firstWaveWaitingStart));
+    }
 
     if (specRenderer) {
       specRenderer.pushGameState(room.game);
@@ -818,9 +852,27 @@
   }
 
   specBtnClose.addEventListener('click', closeSpectator);
+  if (specBtnStartWave) {
+    specBtnStartWave.addEventListener('click', () => {
+      if (!spectatorCode) return;
+      socket.emit('teacher:start_first_wave', { code: spectatorCode }, (res) => {
+        if (res && res.ok) showToast(`⏱️ 已協助房號 ${spectatorCode} 啟動第 1 波倒數！`);
+        else if (res && res.error) showToast(res.error);
+      });
+    });
+  }
   if (specBtnCoopJoin) {
     specBtnCoopJoin.addEventListener('click', () => {
       if (spectatorCode) launchTeacherCoopJoin(spectatorCode);
+    });
+  }
+  if (specBtnChest) {
+    specBtnChest.addEventListener('click', () => {
+      if (!spectatorCode) return;
+      socket.emit('teacher:spawn_chest', { code: spectatorCode }, (res) => {
+        if (res && res.ok) showToast(`🔐 已對房號 ${spectatorCode} 空投 Python 密碼寶箱！`);
+        else showToast((res && res.error) || '空投失敗');
+      });
     });
   }
   specBtnGold.addEventListener('click', () => {

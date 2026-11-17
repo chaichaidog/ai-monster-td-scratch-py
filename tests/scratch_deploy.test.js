@@ -721,6 +721,13 @@ test('Socket.IO 8-9 grade co-op room (G8+G9 sync on twin_lanes) enforces G7 excl
     assert.equal(p1Deploy.ok, true);
     assert.equal(p2Deploy.ok, true);
     assert.equal(p1WrongTurret.ok, false);
+
+    // Sandbox test dummy + Start First Wave 15s countdown over Socket.IO
+    const dummyAck = await g8Sock.emitAsync('student:spawn_test_dummy', {});
+    assert.equal(dummyAck.ok, true);
+    const startFirstAck = await g9Sock.emitAsync('student:start_first_wave', {});
+    assert.equal(startFirstAck.ok, true);
+    assert.equal(startFirstAck.waveDelay, 15.0);
   } finally {
     g7Sock.close();
     g8Sock.close();

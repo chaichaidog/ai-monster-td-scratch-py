@@ -222,6 +222,27 @@ class BattlefieldRenderer {
       });
     } else if (ev.kind === 'wave_clear') {
       if (this.sound) this.sound.playWaveAlert();
+    } else if (ev.kind === 'first_wave_started') {
+      if (this.sound) this.sound.playWaveAlert();
+      this.floatingTexts.push({
+        x: this.meta.mapWidth / 2,
+        y: 88,
+        text: ev.title || '⏱️ 計時開始！準備迎戰第 1 波！',
+        color: '#fde047',
+        life: 2.2,
+        maxLife: 2.2
+      });
+    } else if (ev.kind === 'shatter') {
+      this.spawnSparks(ev.x, ev.y, '#67e8f9', 8);
+      this.spawnSparks(ev.x, ev.y, '#fde047', 6);
+      this.floatingTexts.push({
+        x: ev.x,
+        y: ev.y - 20,
+        text: `❄️⚡超導 +${ev.amount}!`,
+        color: '#a5f3fc',
+        life: 1.0,
+        maxLife: 1.0
+      });
     } else if (ev.kind === 'heal_pulse') {
       this.rings.push({ x: ev.x, y: ev.y, maxR: ev.radius || 95, color: '#4ade80', life: 0.48, maxLife: 0.48 });
     } else if (ev.kind === 'splitter_spawn') {
@@ -702,6 +723,23 @@ class BattlefieldRenderer {
       ctx.textAlign = 'center';
       ctx.fillText('⏸ 暫停思考中', w / 2, h / 2);
       ctx.restore();
+    } else if (!this.mini && this.latestGame.firstWaveWaitingStart && this.latestGame.status === 'playing') {
+      ctx.save();
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.7)';
+      ctx.lineWidth = 2;
+      const bw = 470;
+      const bh = 44;
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') ctx.roundRect(w / 2 - bw / 2, 14, bw, bh, 12);
+      else ctx.rect(w / 2 - bw / 2, 14, bw, bh);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#6ee7b7';
+      ctx.font = 'bold 14px "Noto Sans TC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🛠️ 備戰準備中：排好開局積木（可先按🧪試射），按下「🚀 開始第 1 波倒數」才計時！', w / 2, 41);
+      ctx.restore();
     } else if (!this.mini && this.latestGame.waveDelay > 0 && this.latestGame.status === 'playing') {
       ctx.save();
       ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
@@ -987,13 +1025,15 @@ class BattlefieldRenderer {
       ctx.fillRect(-bw / 2, topY - 4, bw * Math.max(0, m.shield / m.maxShield), 3);
     }
 
-    if (!this.mini && (m.isBoss || m.type === 'gold_slime' || m.type === 'splitter' || m.type === 'medic' || m.stealthed)) {
-      ctx.fillStyle = m.type === 'gold_slime' ? '#fde047' : (m.type === 'medic' ? '#86efac' : (m.stealthed ? '#cbd5e1' : '#fda4af'));
+    if (!this.mini && (m.isTestDummy || m.isBoss || m.type === 'gold_slime' || m.type === 'splitter' || m.type === 'medic' || m.stealthed)) {
+      ctx.fillStyle = m.isTestDummy ? '#38bdf8' : (m.type === 'gold_slime' ? '#fde047' : (m.type === 'medic' ? '#86efac' : (m.stealthed ? '#cbd5e1' : '#fda4af')));
       ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
       ctx.textAlign = 'center';
-      const label = m.type === 'gold_slime'
-        ? '💰 黃金怪'
-        : (m.type === 'splitter' ? '🧬 分裂' : (m.type === 'medic' ? '💚 醫療' : (m.stealthed ? '👻 隱形減傷' : m.name)));
+      const label = m.isTestDummy
+        ? '🧪 訓練測試靶'
+        : (m.type === 'gold_slime'
+          ? '💰 黃金怪'
+          : (m.type === 'splitter' ? '🧬 分裂' : (m.type === 'medic' ? '💚 醫療' : (m.stealthed ? '👻 隱形減傷' : m.name))));
       ctx.fillText(label, 0, topY - 8);
     }
 

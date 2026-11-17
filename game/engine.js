@@ -319,6 +319,7 @@ function createGameState({
     relicAutoPickTimer: 0,
     activeChestQuiz: null,
     elapsed: 0,
+    firstWaveWaitingStart: true,
     wave: 1,
     totalWaves,
     waveTitle: WAVES[0].title,
@@ -365,7 +366,8 @@ function createGameState({
       editsCount: 0,
       skillsUsed: 0,
       bountiesCleared: 0,
-      pickupsCollected: 0
+      pickupsCollected: 0,
+      shatterCombos: 0
     }
   };
 }
@@ -662,6 +664,108 @@ function spawnBonusGoldSlime(state) {
   return { ok: true, monster };
 }
 
+function spawnBonusChest(state) {
+  if (state.status === 'victory' || state.status === 'defeat') {
+    return { ok: false, error: '該局已結束，請先重置或繼續挑戰' };
+  }
+  const mapPaths = (getMapDef(state.mapId).paths) || [PATH_WAYPOINTS];
+  const pts = mapPaths[0] || PATH_WAYPOINTS;
+  const wp = pts[Math.floor(pts.length / 2)] || { x: 420, y: 260 };
+  const quiz = PYTHON_CHEST_QUIZZES && PYTHON_CHEST_QUIZZES.length > 0
+    ? PYTHON_CHEST_QUIZZES[Math.floor(Math.random() * PYTHON_CHEST_QUIZZES.length)]
+    : null;
+  if (!quiz) return { ok: false, error: '目前無可用題庫' };
+  const pickup = {
+    id: state.nextEntityId++,
+    kind: 'py_chest',
+    x: Math.round(clamp(wp.x + (Math.random() - 0.5) * 90, 90, MAP_WIDTH - 90)),
+    y: Math.round(clamp(wp.y + (Math.random() - 0.5) * 70, 80, MAP_HEIGHT - 80)),
+    ttl: 25,
+    maxTtl: 25,
+    label: '🔐老師寶箱',
+    quiz
+  };
+  state.pickups.push(pickup);
+  pushEvent(state, { kind: 'wave_clear', nextWave: state.wave, title: '🔐 老師空投 Python 密碼寶箱！快點擊解題領 15 金幣！' });
+  return { ok: true, pickup };
+}
+
+function startFirstWaveCountdown(state) {
+  if (state.status !== 'playing') {
+    return { ok: false, error: '目前非戰鬥中' };
+  }
+  if (!state.firstWaveWaitingStart) {
+    return { ok: false, error: '第 1 波倒數計時已經啟動囉！' };
+  }
+  state.firstWaveWaitingStart = false;
+  if (state.waveDelay <= 0) {
+    state.waveDelay = 15.0;
+  }
+  // Clear sandbox test dummies and restore non-loop trial ammo before Wave 1 starts
+  state.monsters = state.monsters.filter((m) => !m.isTestDummy);
+  state.projectiles = [];
+  for (const t of state.turrets) {
+    if (t.active && t.loopMode === 'none') {
+      t.ammoRemaining = 3;
+    }
+  }
+  pushEvent(state, {
+    kind: 'first_wave_started',
+    delay: state.waveDelay,
+    title: `⏱️ 倒數計時啟動！${Math.ceil(state.waveDelay)} 秒後第 1 波怪物降臨！`
+  });
+  return { ok: true, waveDelay: state.waveDelay };
+}
+
+function spawnTestDummy(state) {
+  if (state.status !== 'playing') {
+    return { ok: false, error: '目前非進行中，無法測試' };
+  }
+  if (!state.firstWaveWaitingStart && state.waveDelay <= 0) {
+    return { ok: false, error: '目前已經在正式交戰中，可直接觀察砲塔作戰！' };
+  }
+  const activeDummies = state.monsters.filter((m) => m.isTestDummy);
+  if (activeDummies.length >= 2) {
+    return { ok: false, error: '場上已有 2 隻測試靶怪，請先看砲塔表現！' };
+  }
+  const laneIdx = 0;
+  const start = (getLaneGeometry(state.mapId, laneIdx).waypoints[0]) || PATH_WAYPOINTS[0];
+  const dummy = {
+    id: state.nextEntityId++,
+    type: 'shielded',
+    isTestDummy: true,
+    name: '🧪 模擬靶怪',
+    tag: '測試靶',
+    laneIndex: laneIdx,
+    maxHp: 90,
+    hp: 90,
+    maxShield: 35,
+    shield: 35,
+    speed: 72,
+    armor: 0,
+    baseDamage: 0,
+    score: 0,
+    coins: 0,
+    radius: 15,
+    color: '#38bdf8',
+    isBoss: false,
+    distance: 0,
+    progress: 0,
+    x: start.x,
+    y: start.y,
+    slowTimer: 0
+  };
+  state.monsters.push(dummy);
+  pushEvent(state, {
+    kind: 'pickup_collected',
+    x: start.x,
+    y: start.y,
+    text: '🧪 測試靶出發！',
+    color: '#38bdf8'
+  });
+  return { ok: true, dummy };
+}
+
 function computeEndgameRank(state) {
   const learnedCount = Object.values(state.conceptsLearned).filter(Boolean).length;
   const bountyCount = state.completedBounties.length;
@@ -941,6 +1045,17 @@ function registerMonsterKill(state, monster) {
   if (monster._countedKill) return;
   monster._countedKill = true;
 
+  if (monster.isTestDummy) {
+    pushEvent(state, {
+      kind: 'pickup_collected',
+      x: monster.x,
+      y: monster.y,
+      text: '🧪 測試靶擊破 ✓',
+      color: '#38bdf8'
+    });
+    return;
+  }
+
   state.kills += 1;
   state.combo += 1;
   state.comboTimer = 2.6;
@@ -1010,8 +1125,9 @@ function registerMonsterKill(state, monster) {
 function applyDamageToMonster(state, monster, proj) {
   monster._lastCondMatched = Boolean(proj.condMatched);
   monster._lastHitWasAoeOrMulti = Boolean(proj.isMulti || proj.weapon === 'chain' || proj.weapon === 'plasma');
+  const triggerShatter = proj.weapon !== 'frost' && (monster.slowTimer || 0) > 0;
 
-  const { totalDealt, shieldBroken } = dealDirectDamage(
+  const { totalDealt: baseDealt, shieldBroken } = dealDirectDamage(
     state,
     monster,
     proj.damage,
@@ -1019,6 +1135,20 @@ function applyDamageToMonster(state, monster, proj) {
     proj.shieldDmgMult,
     proj.weapon === 'plasma'
   );
+  let totalDealt = baseDealt;
+
+  if (triggerShatter && monster.hp > 0) {
+    const shatterDmg = Math.max(4, Math.round(proj.damage * 0.3));
+    const shatterRes = dealDirectDamage(state, monster, shatterDmg, 1.0, 1.2, false);
+    totalDealt += shatterRes.totalDealt;
+    if (!monster.isTestDummy) {
+      state.stats.shatterCombos = (state.stats.shatterCombos || 0) + 1;
+      if (state.stats.shatterCombos % 3 === 0) {
+        state.coins += 1;
+      }
+    }
+    pushEvent(state, { kind: 'shatter', x: monster.x, y: monster.y, amount: shatterRes.totalDealt });
+  }
 
   if (proj.slowDuration > 0) {
     monster.slowTimer = Math.max(monster.slowTimer || 0, proj.slowDuration);
@@ -1096,7 +1226,15 @@ function advanceGameTick(state, dt) {
     return;
   }
 
-  state.elapsed += dt;
+  // If waveDelay was cleared directly (skip/tests) or past wave 1, exit waiting-for-start phase
+  if (state.firstWaveWaitingStart && (state.wave > 1 || state.waveDelay <= 0 || state.finalBossSpawned)) {
+    state.firstWaveWaitingStart = false;
+  }
+  const isPrepWaitingStart = Boolean(state.firstWaveWaitingStart);
+
+  if (!isPrepWaitingStart) {
+    state.elapsed += dt;
+  }
 
   // Cooldowns & Combo decay
   for (const k of Object.keys(state.skillCooldowns)) {
@@ -1172,7 +1310,7 @@ function advanceGameTick(state, dt) {
     }
   }
 
-  if (state.timedMode) {
+  if (state.timedMode && !isPrepWaitingStart) {
     state.timeRemaining = Math.max(0, state.timeRemaining - dt);
     const bossTriggerAt = Math.min(TIMED_BOSS_SPAWN_REMAINING_SEC, state.timeLimitSeconds * 0.15);
     if (!state.finalBossSpawned && state.timeRemaining <= bossTriggerAt) {
@@ -1210,10 +1348,10 @@ function advanceGameTick(state, dt) {
     }
   }
 
-  // 1. Wave delay / spawning
-  if (state.waveDelay > 0) {
+  // 1. Wave delay / spawning (paused while waiting for student to click Start Wave 1)
+  if (!isPrepWaitingStart && state.waveDelay > 0) {
     state.waveDelay = Math.max(0, state.waveDelay - dt);
-  } else if (state.spawnQueue.length > 0) {
+  } else if (!isPrepWaitingStart && state.spawnQueue.length > 0) {
     state.waveSpawnClock += dt;
     while (state.spawnQueue.length > 0 && state.spawnQueue[0].spawnAt <= state.waveSpawnClock) {
       const next = state.spawnQueue.shift();
@@ -1267,6 +1405,9 @@ function advanceGameTick(state, dt) {
     m.progress = laneLen > 0 ? m.distance / laneLen : 1;
 
     if (m.distance >= laneLen) {
+      if (m.isTestDummy) {
+        continue;
+      }
       state.baseHp = Math.max(0, state.baseHp - m.baseDamage);
       state.combo = 0;
       pushEvent(state, {
@@ -1477,7 +1618,7 @@ function advanceGameTick(state, dt) {
   }
 
   // 5. Wave completion / progression
-  if (!state.finalBossSpawned && state.spawnQueue.length === 0 && state.monsters.length === 0 && state.waveDelay === 0) {
+  if (!isPrepWaitingStart && !state.finalBossSpawned && state.spawnQueue.length === 0 && state.monsters.length === 0 && state.waveDelay === 0) {
     if (!state.endlessMode && state.wave >= state.totalWaves) {
       state.status = 'victory';
       state.score += state.baseHp * 5;
@@ -1980,7 +2121,7 @@ function applyFunctionToTurret(state, turretId, functionId) {
 }
 
 function skipWaveDelay(state) {
-  if (state.status === 'playing' && state.waveDelay > 0) {
+  if (state.status === 'playing' && !state.firstWaveWaitingStart && state.waveDelay > 0) {
     state.waveDelay = 0;
     return true;
   }
@@ -2030,6 +2171,7 @@ function serializeGameState(state) {
     finalBossSpawned: Boolean(state.finalBossSpawned),
     finalBossCleared: Boolean(state.finalBossCleared),
     elapsed: Number(state.elapsed.toFixed(2)),
+    firstWaveWaitingStart: Boolean(state.firstWaveWaitingStart),
     wave: state.wave,
     totalWaves: state.totalWaves,
     waveTitle: state.waveTitle,
@@ -2126,6 +2268,7 @@ function serializeGameState(state) {
       radius: m.radius,
       color: m.color,
       isBoss: m.isBoss,
+      isTestDummy: Boolean(m.isTestDummy),
       progress: Number(m.progress.toFixed(3)),
       slowed: m.slowTimer > 0,
       stealthed: m.type === 'stealth' && (m.progress || 0) < 0.55 && (m.slowTimer || 0) <= 0
@@ -2162,11 +2305,14 @@ module.exports = {
   saveOrUpdateFunction,
   applyFunctionToTurret,
   skipWaveDelay,
+  startFirstWaveCountdown,
+  spawnTestDummy,
   collectPickup,
   chooseRelic,
   answerChestQuiz,
   addMapPing,
   spawnBonusGoldSlime,
+  spawnBonusChest,
   checkBountyProgress,
   computeEndgameRank,
   serializeGameState

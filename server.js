@@ -259,6 +259,26 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
   });
 
+  socket.on('teacher:spawn_chest', ({ code } = {}, ack) => {
+    if (socket.data.role !== 'teacher') return;
+    const res = roomManager.handleTeacherSpawnChest(code);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
+  });
+
+  socket.on('teacher:start_first_wave', ({ code } = {}, ack) => {
+    if (socket.data.role !== 'teacher') return;
+    const res = roomManager.handleStartFirstWave(code, '👩‍🏫 老師', true);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, waveDelay: res.waveDelay, error: res.error });
+  });
+
   // --- Student & Teacher-Coop Join Events ---
   socket.on('student:join_room', (payload = {}, ack) => {
     const wantsTeacher = payload.grade === 'TEACHER' || Boolean(payload.isTeacher);
@@ -491,6 +511,26 @@ io.on('connection', (socket) => {
       broadcastTeacherDashboard();
     }
     if (typeof ack === 'function') ack({ ok: res.ok });
+  });
+
+  socket.on('student:start_first_wave', (_payload, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.handleStartFirstWave(socket.data.roomCode, socket.data.playerId, false);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, waveDelay: res.waveDelay, error: res.error });
+  });
+
+  socket.on('student:spawn_test_dummy', (_payload, ack) => {
+    if (!socket.data.roomCode || !socket.data.playerId) return;
+    const res = roomManager.handleSpawnTestDummy(socket.data.roomCode, socket.data.playerId);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
   });
 
   socket.on('student:collect_pickup', ({ pickupId } = {}, ack) => {

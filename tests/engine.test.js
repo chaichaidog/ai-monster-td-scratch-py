@@ -92,7 +92,17 @@ test('lobby next-step readiness and 2-player turn rotation work cleanly', () => 
   assert.equal(p2Edit.ok, true);
   assert.equal(room.game.conceptsLearned.conditionals, true);
 
-  // Timer auto-rotation after 25s
+  // Prep stage holds timers until Start First Wave button is clicked
+  assert.equal(room.game.firstWaveWaitingStart, true);
+  for (let i = 0; i < 60; i++) rm.tickAll(0.05);
+  assert.equal(room.game.waveDelay, 15.0, 'waveDelay must stay paused until player presses Start');
+  assert.equal(room.activeTurnPlayerId, p2.id, 'turn timer must stay paused during prep');
+
+  const startWaveRes = rm.handleStartFirstWave('101', p2.id, false);
+  assert.equal(startWaveRes.ok, true);
+  assert.equal(room.game.firstWaveWaitingStart, false);
+
+  // Timer auto-rotation after 25s once wave 1 countdown starts
   for (let i = 0; i < 510; i++) {
     rm.tickAll(0.05);
   }
@@ -644,7 +654,8 @@ test('Timed 20-min endless mode (unlimited waves -> final boss finish), auto-sav
   rm.setPlayerReady('AUTO', p1.id, true);
   rm.setPlayerReady('AUTO', p2.id, true);
 
-  // p1 creates an uncommitted Scratch draft on T1 and does NOT press Apply
+  // p1 starts wave 1 countdown then creates an uncommitted Scratch draft on T1 and does NOT press Apply
+  rm.handleStartFirstWave('AUTO', p1.id, false);
   rm.savePendingDraft('AUTO', p1.id, {
     turretId: 'T1',
     blocks: [
@@ -934,7 +945,7 @@ test('G89 co-op & G9 isolation, twin_lanes map, sync ownership, relics, mechanic
     condMatched: false
   });
   Engine.advanceGameTick(gs, 0.05);
-  assert.equal(stealthMob.hp, 42, 'Slowed stealth monster should take full damage (40 - 1 armor = 39 -> hp 42)');
+  assert.equal(stealthMob.hp, 31, 'Slowed stealth takes full dmg (39) + shatter combo (11) -> hp 31');
 
   // Python Chest Quiz reward
   gs.activeChestQuiz = {
@@ -954,6 +965,103 @@ test('G89 co-op & G9 isolation, twin_lanes map, sync ownership, relics, mechanic
   assert.equal(gs.computeBudget, prevBudget + 4);
   assert.equal(gs.activeChestQuiz, null);
 });
+
+test('First-wave prep button, test dummy sandbox, shatter elemental combo, and teacher chest drop', () => {
+  const Engine = require('../game/engine');
+  const { RoomManager } = require('../game/roomManager');
+
+  const gs = Engine.createGameState({ grade: 'G7', gameMode: 'timed20', timeLimitSeconds: 600 });
+  assert.equal(gs.firstWaveWaitingStart, true);
+  assert.equal(gs.waveDelay, 15.0);
+  assert.equal(gs.timeRemaining, 600);
+
+  // Advance ticks before pressing start -> timers remain paused while test dummy can be tried
+  const noLoopRes = Engine.updateTurretFromBlocks(gs, 'T1', [
+    { id: 'v', type: 'set_var', varName: 'damage', op: 'set', value: 25 }
+  ]);
+  assert.equal(noLoopRes.ok, true);
+  const dummyRes = Engine.spawnTestDummy(gs);
+  assert.equal(dummyRes.ok, true);
+  assert.equal(gs.monsters.length, 1);
+  assert.equal(gs.monsters[0].isTestDummy, true);
+
+  for (let i = 0; i < 40; i++) Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.waveDelay, 15.0, 'Wave 1 countdown must stay paused until Start');
+  assert.equal(gs.timeRemaining, 600, '20-min timer must stay paused until Start');
+  assert.equal(gs.baseHp, 100);
+
+  // Press Start Wave 1 Countdown -> clears dummies, restores trial ammo, begins countdown -> spawns monsters
+  const startRes = Engine.startFirstWaveCountdown(gs);
+  assert.equal(startRes.ok, true);
+  assert.equal(gs.firstWaveWaitingStart, false);
+  assert.equal(gs.monsters.filter((m) => m.isTestDummy).length, 0);
+  assert.equal(noLoopRes.turret.ammoRemaining, 3);
+
+  for (let i = 0; i < 340; i++) Engine.advanceGameTick(gs, 0.05);
+  assert.equal(gs.waveDelay, 0, 'After 15s countdown ticks down, waveDelay hits 0');
+  assert.ok(gs.timeRemaining < 600, 'Game timer advances after start');
+  assert.ok(gs.monsters.length > 0, 'Wave 1 monsters spawn after countdown completes');
+
+  // Shatter combo: shooting a slowed monster with chain/laser/plasma deals +30% extra damage
+  gs.monsters = [{
+    id: 7001,
+    type: 'tank',
+    name: '冰凍標靶',
+    tag: '測試',
+    laneIndex: 0,
+    x: 220,
+    y: 220,
+    distance: 180,
+    progress: 0.25,
+    maxHp: 300,
+    hp: 300,
+    shield: 0,
+    maxShield: 0,
+    speed: 40,
+    armor: 0,
+    baseDamage: 10,
+    coins: 5,
+    score: 10,
+    radius: 16,
+    color: '#38bdf8',
+    isBoss: false,
+    slowTimer: 2.0
+  }];
+  gs.turrets.forEach((t) => { t.active = false; });
+  const pos7 = Engine.getPositionAtDistance(180, gs.mapId, 0);
+  gs.projectiles = [{
+    id: 7101,
+    turretId: 'T1',
+    weapon: 'laser',
+    isMulti: false,
+    x: pos7.x,
+    y: pos7.y,
+    targetId: 7001,
+    targetX: pos7.x,
+    targetY: pos7.y,
+    speed: 580,
+    damage: 40,
+    hpDmgMult: 1,
+    shieldDmgMult: 1,
+    slowDuration: 0,
+    color: '#38bdf8',
+    condMatched: false
+  }];
+  Engine.advanceGameTick(gs, 0.05);
+  // 40 base + 12 shatter (30% of 40) = 52 dmg -> hp 248
+  assert.equal(gs.monsters[0].hp, 248);
+  assert.equal(gs.stats.shatterCombos, 1);
+
+  // Teacher bonus chest drop
+  const rm = new RoomManager();
+  const { room } = rm.createRoom({ code: '188', grade: 'G7', maxPlayers: 1 });
+  const p = rm.joinRoom({ code: '188', nickname: '小測試', grade: 'G7', socketId: 's1' }).player;
+  rm.setPlayerReady('188', p.id, true);
+  const chestRes = rm.handleTeacherSpawnChest('188');
+  assert.equal(chestRes.ok, true);
+  assert.ok(room.game.pickups.some((pk) => pk.kind === 'py_chest'));
+});
+
 
 
 

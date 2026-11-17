@@ -13,11 +13,14 @@ const {
   saveOrUpdateFunction,
   applyFunctionToTurret,
   skipWaveDelay,
+  startFirstWaveCountdown,
+  spawnTestDummy,
   collectPickup,
   chooseRelic,
   answerChestQuiz,
   addMapPing,
   spawnBonusGoldSlime,
+  spawnBonusChest,
   serializeGameState
 } = require('./engine');
 
@@ -415,7 +418,7 @@ class RoomManager {
     room.activeTurnPlayerId = room.players[0] ? room.players[0].id : null;
     room.turnNumber = 1;
     room.turnTimeLeft = room.turnDuration;
-    this.logAction(room, '系統', '全體就緒，AI 怪物塔防戰正式開戰！');
+    this.logAction(room, '系統', '全體進入戰場備戰！放好開局積木後，請按「🚀 開始第 1 波倒數」計時出怪！');
   }
 
   forceStartRoom(code) {
@@ -775,6 +778,39 @@ class RoomManager {
     return { ok: true, room };
   }
 
+  handleStartFirstWave(code, actorIdOrLabel = null, isTeacherActor = false) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    if (room.phase !== 'playing') return { ok: false, error: '尚未進入戰場' };
+    const player = !isTeacherActor && actorIdOrLabel
+      ? room.players.find((p) => p.id === actorIdOrLabel)
+      : null;
+    if (!isTeacherActor && !player) return { ok: false, error: '無效玩家' };
+    const actorName = isTeacherActor ? '👩‍🏫 老師' : player.nickname;
+
+    // Auto-apply pending drafts for active player so nothing unsaved gets missed right before Wave 1 begins
+    if (room.activeTurnPlayerId) {
+      this.flushPendingDraftsForPlayer(room, room.activeTurnPlayerId, '啟動第1波計時');
+    }
+
+    const res = startFirstWaveCountdown(room.game);
+    if (!res.ok) return res;
+    room.turnTimeLeft = room.turnDuration;
+    this.logAction(room, actorName, `按下「🚀 開始第 1 波倒數」，${Math.ceil(res.waveDelay)} 秒倒數計時啟動！`);
+    return { ok: true, room, waveDelay: res.waveDelay };
+  }
+
+  handleSpawnTestDummy(code, playerId) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '無效玩家' };
+    const res = spawnTestDummy(room.game);
+    if (!res.ok) return res;
+    this.logAction(room, player.nickname, '派出「🧪 模擬訓練靶怪」測試砲塔火力與條件！');
+    return { ok: true, room, dummy: res.dummy };
+  }
+
   resetRoom(code, actorLabel = '老師') {
     const room = this.getRoom(code);
     if (!room) return { ok: false, error: '找不到房間' };
@@ -847,6 +883,20 @@ class RoomManager {
     return { ok: true, room };
   }
 
+  handleTeacherSpawnChest(code) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const res = spawnBonusChest(room.game);
+    if (!res.ok) return res;
+    room.teacherBanner = {
+      id: Date.now(),
+      text: '🔐 老師空投了「Python 密碼寶箱」！快點地圖上的紫色寶箱解題賺 +15 🪙 ＆ +4 算力！',
+      time: new Date().toLocaleTimeString('zh-TW', { hour12: false })
+    };
+    this.logAction(room, '👩‍🏫 老師發寶箱', '空投了一個 Python 密碼寶箱');
+    return { ok: true, room };
+  }
+
   handlePickRelic(code, playerId, relicId) {
     const room = this.getRoom(code);
     if (!room) return { ok: false, error: '找不到房間' };
@@ -899,8 +949,8 @@ class RoomManager {
       if (room.phase !== 'playing') continue;
       if (room.game.status !== 'playing') continue;
 
-      // Turn timer rotation in 2-player turn mode
-      if (room.turnMode === 'turn') {
+      // Turn timer rotation in 2-player turn mode (paused during initial Wave 1 prep before Start button)
+      if (room.turnMode === 'turn' && !room.game.firstWaveWaitingStart) {
         const connectedPlayers = room.players.filter((p) => p.connected);
         if (connectedPlayers.length >= 2) {
           room.turnTimeLeft -= dt;

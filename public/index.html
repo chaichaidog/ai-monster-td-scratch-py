@@ -226,8 +226,10 @@
         <div id="turn-subtitle" style="font-size: 0.84rem; color: var(--text-muted); margin-top: 2px;"></div>
         <div id="teammate-tips-bar" class="tip-bar hidden"></div>
       </div>
-      <div style="display: flex; align-items: center; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
         <span id="turn-timer-pill" class="badge badge-amber hidden">剩餘 25 秒</span>
+        <button id="btn-test-dummy" class="btn btn-sm hidden" type="button" title="在準備階段放出一隻無傷害的訓練靶怪，測試你的砲塔武器、射程與如果條件！">🧪 派出測試靶怪</button>
+        <button id="btn-start-wave-1" class="btn btn-emerald btn-sm hidden" type="button">🚀 開始第 1 波倒數</button>
         <button id="btn-skip-wave" class="btn btn-sm hidden" type="button">⚡ 立即出怪</button>
         <button id="btn-end-turn" class="btn btn-amber hidden" type="button">完成調整，換隊友接手 ↻</button>
       </div>
@@ -245,6 +247,15 @@
       <div class="arena-panel">
         <div class="canvas-frame">
           <canvas id="battle-canvas"></canvas>
+          <div id="first-wave-prep-cta" class="prep-cta-overlay hidden">
+            <div class="prep-cta-text">
+              🛠️ <strong>第 1 波備戰時間（計時尚未開始）</strong>：請先拖拉右側 Scratch 積木並按套用，也可先點左側「測試靶怪」試射！
+            </div>
+            <div class="prep-cta-actions">
+              <button id="btn-overlay-test-dummy" class="btn btn-sm" type="button">🧪 派出測試靶怪試射</button>
+              <button id="btn-overlay-start-wave" class="btn btn-emerald" type="button">🚀 開始第 1 波倒數（計時 15 秒後出怪）</button>
+            </div>
+          </div>
         </div>
 
         <!-- Commander Skills -->
