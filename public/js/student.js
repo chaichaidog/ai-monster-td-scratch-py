@@ -105,6 +105,10 @@
   const btnPauseSolo = document.getElementById('btn-pause-solo');
   const btnLeaveGame = document.getElementById('btn-leave-game');
   const btnSoundToggle = document.getElementById('btn-sound-toggle');
+  const btnModeBattle = document.getElementById('btn-mode-battle');
+  const btnModeCoding = document.getElementById('btn-mode-coding');
+  const btnGotoCoding = document.getElementById('btn-goto-coding');
+  const btnOverlayCoding = document.getElementById('btn-overlay-coding');
 
   const teacherBanner = document.getElementById('teacher-banner');
   const teacherBannerText = document.getElementById('teacher-banner-text');
@@ -131,12 +135,16 @@
   const btnCancelMapPick = document.getElementById('btn-cancel-map-pick');
   const waveHintBox = document.getElementById('wave-hint-box');
   const turretSelectorRow = document.getElementById('turret-selector-row');
+  const codingTurretTabs = document.getElementById('coding-turret-tabs');
 
   const editorTurretTitle = document.getElementById('editor-turret-title');
   const editorBoundFn = document.getElementById('editor-bound-fn');
   const editorCostPill = document.getElementById('editor-cost-pill');
   const codeTabs = document.querySelectorAll('.code-tab');
 
+  const scratchLayout = document.getElementById('scratch-layout');
+  const scratchPalette = document.getElementById('scratch-palette');
+  const scratchTrashBanner = document.getElementById('scratch-trash-banner');
   const scratchPaletteItems = document.querySelectorAll('.scratch-palette-item');
   const scratchWorkspace = document.getElementById('scratch-workspace');
   const scratchBlocksList = document.getElementById('scratch-blocks-list');
@@ -148,7 +156,13 @@
   const monsterGuideGrid = document.getElementById('monster-guide-grid');
 
   const btnDeployTurret = document.getElementById('btn-deploy-turret');
+  const btnApplyAndPlay = document.getElementById('btn-apply-and-play');
+  const btnTogglePy = document.getElementById('btn-toggle-py');
   const codePreview = document.getElementById('code-preview');
+
+  let currentViewMode = 'battle';
+  let mapPickReturnToCoding = false;
+  let showPythonMirror = true;
 
   let feedbackRating = 5;
   const feedbackSelectedTags = new Set();
@@ -323,6 +337,78 @@
     return roomState.game.turrets.find((t) => t.id === selectedTurretId) || roomState.game.turrets[0];
   }
 
+  function canEditBlocks() {
+    if (!roomState || !roomState.game) return false;
+    const st = roomState.game.status;
+    return st === 'playing' || (st === 'paused' && !roomState.pausedByTeacher);
+  }
+
+  function applyLocalViewModeClass(mode) {
+    const isCoding = mode === 'coding';
+    if (viewGame) {
+      viewGame.classList.toggle('mode-coding', isCoding);
+      viewGame.classList.toggle('mode-battle', !isCoding);
+    }
+    if (btnModeBattle) {
+      btnModeBattle.classList.toggle('active', !isCoding);
+    }
+    if (btnModeCoding) {
+      btnModeCoding.classList.toggle('active', isCoding);
+      btnModeCoding.classList.toggle('coding-active', isCoding);
+    }
+    if (btnGotoCoding) {
+      btnGotoCoding.classList.toggle('hidden', isCoding);
+    }
+  }
+
+  function setViewMode(mode, { syncServer = true } = {}) {
+    const nextMode = mode === 'coding' ? 'coding' : 'battle';
+    currentViewMode = nextMode;
+    applyLocalViewModeClass(nextMode);
+    if (nextMode === 'coding') {
+      lastRenderedBlocksKey = '';
+      if (roomState) {
+        renderWorkspaceBlocks(true);
+        updateScratchPreview();
+      }
+    }
+    if (syncServer && roomState && roomState.phase === 'playing') {
+      socket.emit('student:set_view_mode', { mode: nextMode }, (res) => {
+        if (res && !res.ok && res.needRejoin) triggerAutoRejoin();
+      });
+    }
+  }
+
+  function selectTurretById(turretId) {
+    if (!turretId || turretId === selectedTurretId) return;
+    selectedTurretId = turretId;
+    dirtyDraft = false;
+    deployInFlight = false;
+    deployErrorMsg = '';
+    highlightBlockId = null;
+    setMapPickMode(null);
+    lastRenderedBlocksKey = '';
+    lastTurretPillsKey = '';
+    lastFnListKey = '';
+    if (renderer) renderer.setSelectedTurret(turretId);
+    if (roomState && roomState.game) {
+      const t = roomState.game.turrets.find((item) => item.id === turretId);
+      syncEditorFromServer(t, true);
+      renderTurretPills(roomState.game.turrets);
+      renderEditorHeader(t);
+    }
+  }
+
+  function setTrashMode(active, hovering = false) {
+    if (scratchPalette) {
+      scratchPalette.classList.toggle('trash-active', Boolean(active));
+      scratchPalette.classList.toggle('trash-hover', Boolean(active && hovering));
+    }
+    if (scratchTrashBanner) {
+      scratchTrashBanner.classList.toggle('hidden', !active);
+    }
+  }
+
   function isMyTurn(turretId = selectedTurretId) {
     if (!roomState || roomState.phase !== 'playing') return false;
     if (roomState.turnMode === 'solo') return true;
@@ -420,32 +506,25 @@
       top.style.gap = '4px';
 
       const nameEl = document.createElement('strong');
-      nameEl.style.fontSize = '0.8rem';
+      nameEl.style.fontSize = '0.78rem';
       nameEl.textContent = skill.name;
 
       const costEl = document.createElement('span');
       costEl.className = 'badge badge-amber';
       costEl.style.padding = '1px 6px';
-      costEl.style.fontSize = '0.72rem';
-      costEl.textContent = `🪙 ${skill.coinCost}`;
+      costEl.style.fontSize = '0.7rem';
+      costEl.textContent = `🪙${skill.coinCost}`;
 
       top.appendChild(nameEl);
       top.appendChild(costEl);
 
-      const descEl = document.createElement('div');
-      descEl.style.fontSize = '0.7rem';
-      descEl.style.color = 'var(--text-muted)';
-      descEl.style.marginTop = '3px';
-      descEl.textContent = skill.desc;
-
       const statusEl = document.createElement('div');
       statusEl.style.fontSize = '0.71rem';
-      statusEl.style.marginTop = '3px';
+      statusEl.style.marginTop = '2px';
       statusEl.style.color = 'var(--cyan)';
       statusEl.textContent = '準備就緒';
 
       btn.appendChild(top);
-      btn.appendChild(descEl);
       btn.appendChild(statusEl);
 
       btn.addEventListener('click', () => {
@@ -472,13 +551,16 @@
       const canUse = game.status === 'playing' && enoughCoins && cd <= 0;
       btn.disabled = !canUse;
       if (cd > 0) {
-        statusEl.textContent = `⏳ 冷卻中 ${cd.toFixed(1)} 秒`;
+        statusEl.textContent = `⏳ ${cd.toFixed(1)}s`;
         statusEl.style.color = '#fca5a5';
       } else if (!enoughCoins) {
-        statusEl.textContent = `還差 ${skill.coinCost - game.coins} 金幣`;
+        statusEl.textContent = `缺 ${skill.coinCost - game.coins}🪙`;
+        statusEl.style.color = 'var(--text-muted)';
+      } else if (game.status === 'paused') {
+        statusEl.textContent = '⏸ 暫停中';
         statusEl.style.color = 'var(--text-muted)';
       } else {
-        statusEl.textContent = '⚡ 點擊立即施放';
+        statusEl.textContent = '⚡ 可施放';
         statusEl.style.color = '#34d399';
       }
     });
@@ -593,6 +675,9 @@
           }
           sessionStorage.setItem('ai_td_player_token', myPlayerToken);
           onRoomState(res.room);
+          if (currentViewMode === 'coding' && res.room && res.room.phase === 'playing') {
+            socket.emit('student:set_view_mode', { mode: 'coding' });
+          }
         }
       }
     );
@@ -679,6 +764,10 @@
     currentSession = null;
     rejoinInFlight = false;
     stopHeartbeat();
+    currentViewMode = 'battle';
+    mapPickReturnToCoding = false;
+    applyLocalViewModeClass('battle');
+    setTrashMode(false, false);
     roomState = null;
     myPlayerId = null;
     dirtyDraft = false;
@@ -771,7 +860,37 @@
 
   btnCancelMapPick.addEventListener('click', () => setMapPickMode(null));
 
+  if (btnModeBattle) {
+    btnModeBattle.addEventListener('click', () => {
+      setMapPickMode(null);
+      setViewMode('battle');
+    });
+  }
+  if (btnModeCoding) {
+    btnModeCoding.addEventListener('click', () => {
+      setViewMode('coding');
+    });
+  }
+  if (btnGotoCoding) {
+    btnGotoCoding.addEventListener('click', () => {
+      setViewMode('coding');
+    });
+  }
+  if (btnOverlayCoding) {
+    btnOverlayCoding.addEventListener('click', () => {
+      setViewMode('coding');
+    });
+  }
+  if (btnTogglePy) {
+    btnTogglePy.addEventListener('click', () => {
+      showPythonMirror = !showPythonMirror;
+      if (scratchLayout) scratchLayout.classList.toggle('hide-python', !showPythonMirror);
+      btnTogglePy.textContent = showPythonMirror ? '🐍 隱藏 Python' : '🐍 顯示 Python';
+    });
+  }
+
   function setMapPickMode(blockId) {
+    const prevPick = mapPickBlockId;
     mapPickBlockId = blockId || null;
     if (mapPickBanner) mapPickBanner.classList.toggle('hidden', !mapPickBlockId);
     if (battleCanvas) battleCanvas.classList.toggle('pick-cursor', Boolean(mapPickBlockId));
@@ -782,7 +901,14 @@
     lastRenderedBlocksKey = '';
     if (roomState) renderWorkspaceBlocks();
     if (mapPickBlockId) {
-      showToast('🎯 請直接點擊左側戰場地圖任意位置，砲塔座標與底下 Python 會自動填好！');
+      if (currentViewMode === 'coding') {
+        mapPickReturnToCoding = true;
+        applyLocalViewModeClass('battle');
+      }
+      showToast('🎯 請直接點擊戰場地圖選取座標！');
+    } else if (prevPick && mapPickReturnToCoding) {
+      mapPickReturnToCoding = false;
+      applyLocalViewModeClass('coding');
     }
   }
 
@@ -797,6 +923,9 @@
         handleActionAckError(res);
       } else {
         dirtyDraft = false;
+        if (currentViewMode === 'coding') {
+          setViewMode('battle', { syncServer: false });
+        }
       }
     });
   });
@@ -983,7 +1112,7 @@
       lastRenderedBlocksKey = '';
       renderWorkspaceBlocks(true);
     } else if (roomState && roomState.game) {
-      const canEdit = isMyTurn() && roomState.game.status === 'playing';
+      const canEdit = isMyTurn() && canEditBlocks();
       lastRenderedBlocksKey = computeBlocksRenderKey(canEdit);
     }
     updateScratchPreview();
@@ -991,8 +1120,8 @@
   }
 
   function addPaletteBlock(paletteType, insertAtIndex = null) {
-    if (!isMyTurn() || !roomState || roomState.game.status !== 'playing') {
-      showToast('目前無法編輯積木（請等待你的回合或確認遊戲進行中）');
+    if (!isMyTurn() || !canEditBlocks()) {
+      showToast('目前無法編輯積木（請等待你的回合或確認遊戲未結束）');
       return;
     }
     if (workspaceBlocks.length >= 14) {
@@ -1011,12 +1140,12 @@
     markDraftEdited(newBlock.id, true);
   }
 
-  // Palette Click & Drag Listeners
+  // Palette Click & Drag Listeners (Plus Drop-to-Delete Like Scratch!)
   scratchPaletteItems.forEach((item) => {
     const blockType = item.dataset.blockType;
     item.addEventListener('click', () => addPaletteBlock(blockType));
     item.addEventListener('dragstart', (e) => {
-      if (!isMyTurn() || !roomState || roomState.game.status !== 'playing') {
+      if (!isMyTurn() || !canEditBlocks()) {
         e.preventDefault();
         return;
       }
@@ -1029,8 +1158,41 @@
     item.addEventListener('dragend', () => {
       dragSource = null;
       scratchWorkspace.classList.remove('drag-over');
+      setTrashMode(false, false);
     });
   });
+
+  if (scratchPalette) {
+    scratchPalette.addEventListener('dragover', (e) => {
+      if (!dragSource || dragSource.kind !== 'workspace') return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      setTrashMode(true, true);
+    });
+
+    scratchPalette.addEventListener('dragleave', (e) => {
+      if (!dragSource || dragSource.kind !== 'workspace') return;
+      if (!e.relatedTarget || !scratchPalette.contains(e.relatedTarget)) {
+        setTrashMode(true, false);
+      }
+    });
+
+    scratchPalette.addEventListener('drop', (e) => {
+      if (!dragSource || dragSource.kind !== 'workspace') return;
+      e.preventDefault();
+      e.stopPropagation();
+      const idx = dragSource.index;
+      dragSource = null;
+      setTrashMode(false, false);
+      if (idx >= 0 && idx < workspaceBlocks.length) {
+        workspaceBlocks.splice(idx, 1);
+        const fallbackHighlight = workspaceBlocks[Math.min(idx, workspaceBlocks.length - 1)];
+        highlightBlockId = fallbackHighlight ? fallbackHighlight.id : null;
+        markDraftEdited(highlightBlockId, true);
+        showToast('🗑️ 已拖曳刪除積木！', 1800);
+      }
+    });
+  }
 
   // Workspace Drop Target
   scratchWorkspace.addEventListener('dragover', (e) => {
@@ -1048,6 +1210,7 @@
   scratchWorkspace.addEventListener('drop', (e) => {
     e.preventDefault();
     scratchWorkspace.classList.remove('drag-over');
+    setTrashMode(false, false);
     if (!dragSource) return;
     if (dragSource.kind === 'palette') {
       addPaletteBlock(dragSource.blockType);
@@ -1242,7 +1405,7 @@
 
   function commitBlockFieldSilent() {
     if (roomState && roomState.game) {
-      const canEdit = isMyTurn() && roomState.game.status === 'playing';
+      const canEdit = isMyTurn() && canEditBlocks();
       lastRenderedBlocksKey = computeBlocksRenderKey(canEdit);
     }
     updateScratchPreview();
@@ -1251,7 +1414,7 @@
 
   function renderWorkspaceBlocks(force = false) {
     const turret = getSelectedTurret();
-    const canEdit = isMyTurn() && Boolean(roomState && roomState.game && roomState.game.status === 'playing');
+    const canEdit = isMyTurn() && canEditBlocks();
     if (!force && canEdit && scratchBlocksList.contains(document.activeElement)) {
       const tag = document.activeElement.tagName;
       if (tag === 'INPUT' || tag === 'SELECT') return;
@@ -1265,10 +1428,10 @@
     if (workspaceBlocks.length === 0) {
       const empty = document.createElement('div');
       empty.style.color = 'var(--text-muted)';
-      empty.style.fontSize = '0.82rem';
-      empty.style.padding = '16px 8px';
+      empty.style.fontSize = '0.84rem';
+      empty.style.padding = '28px 12px';
       empty.style.textAlign = 'center';
-      empty.textContent = '💤 這座砲塔還是空的！從左邊點「＋」或拖入積木（別忘記加 🩷「重複迴圈」才會持續連射）！';
+      empty.textContent = '把左邊積木拖進來（記得加 🩷「重複迴圈」才會一直射）';
       scratchBlocksList.appendChild(empty);
       return;
     }
@@ -1290,6 +1453,7 @@
         }
         dragSource = { kind: 'workspace', index: idx };
         blockEl.classList.add('dragging');
+        setTrashMode(true, false);
         if (e.dataTransfer) {
           e.dataTransfer.effectAllowed = 'move';
           e.dataTransfer.setData('text/plain', `move:${idx}`);
@@ -1298,6 +1462,12 @@
 
       blockEl.addEventListener('dragend', () => {
         blockEl.classList.remove('dragging');
+        if (scratchBlocksList) {
+          scratchBlocksList.querySelectorAll('.drag-insert-before').forEach((el) => {
+            el.classList.remove('drag-insert-before');
+          });
+        }
+        setTrashMode(false, false);
         dragSource = null;
       });
 
@@ -1305,20 +1475,28 @@
         if (!dragSource || !canEdit) return;
         e.preventDefault();
         e.stopPropagation();
+        blockEl.classList.add('drag-insert-before');
+      });
+
+      blockEl.addEventListener('dragleave', () => {
+        blockEl.classList.remove('drag-insert-before');
       });
 
       blockEl.addEventListener('drop', (e) => {
         if (!dragSource || !canEdit) return;
         e.preventDefault();
         e.stopPropagation();
+        blockEl.classList.remove('drag-insert-before');
         scratchWorkspace.classList.remove('drag-over');
+        setTrashMode(false, false);
         if (dragSource.kind === 'palette') {
           addPaletteBlock(dragSource.blockType, idx);
         } else if (dragSource.kind === 'workspace') {
           const fromIdx = dragSource.index;
           if (fromIdx !== idx && fromIdx >= 0 && fromIdx < workspaceBlocks.length) {
             const [moved] = workspaceBlocks.splice(fromIdx, 1);
-            workspaceBlocks.splice(idx, 0, moved);
+            const targetIdx = fromIdx < idx ? idx - 1 : idx;
+            workspaceBlocks.splice(targetIdx, 0, moved);
             markDraftEdited(moved.id, true);
           }
         }
@@ -1662,34 +1840,24 @@
 
     if (deployErrorMsg) {
       scratchDiagnostic.className = 'py-diagnostic err';
-      scratchDiagnostic.textContent = `❌ 套用失敗：${deployErrorMsg}`;
+      scratchDiagnostic.textContent = `❌ ${deployErrorMsg}`;
     } else if (!hasBlocks) {
       scratchDiagnostic.className = 'py-diagnostic';
-      scratchDiagnostic.textContent = `💤 ${turret.id} 目前是空的！拖入積木（建議：切換武器＋變數＋🩷重複迴圈）並按「套用」才會開火（總算力 ${totalProjected}/${g.computeBudget}）`;
+      scratchDiagnostic.textContent = `💤 ${turret.id} 尚未放積木 · 總算力 ${totalProjected}/${g.computeBudget}`;
     } else if (totalProjected > g.computeBudget) {
       scratchDiagnostic.className = 'py-diagnostic err';
-      scratchDiagnostic.textContent = `⚠️ 總算力超出上限（需要 ${totalProjected} / ${g.computeBudget}）！請降低數值、改用「🧩 函式」85折省算力，或用金幣升級算力核心`;
+      scratchDiagnostic.textContent = `⚠️ 算力預算不足（${totalProjected}/${g.computeBudget}），請調低數值或改用「🧩 函式」省 15%`;
     } else if (cfg.loopMode === 'none') {
       scratchDiagnostic.className = 'py-diagnostic';
-      scratchDiagnostic.textContent = `⚠️ 未放「🩷 重複迴圈」：套用後只會點放試射 3 發就停火！總算力 ${totalProjected}/${g.computeBudget}`;
+      scratchDiagnostic.textContent = `⚠️ 缺「🩷 重複迴圈」：只射 3 發就會停 · 算力 ${totalProjected}/${g.computeBudget}`;
     } else {
       scratchDiagnostic.className = 'py-diagnostic ok';
-      const moveLabel = cfg.patrolAxis !== 'none'
-        ? `巡邏 ${cfg.patrolAxis.toUpperCase()}軸±${cfg.patrolDist}px`
-        : `座標 (${cfg.targetX}, ${cfg.targetY})`;
       const hasFnMaster = Array.isArray(g.relics) && g.relics.includes('fn_master');
-      const fnTag = cfg.boundFunctionId ? (hasFnMaster ? '（函式 7 折!）' : '（函式 85 折!）') : '';
+      const fnTag = cfg.boundFunctionId ? (hasFnMaster ? ' (7折)' : ' (85折)') : '';
       let ctTip = '';
-      if (turret.inHazard) {
-        ctTip = ' · ⚠️ 正處減速霧，快用📍移動躲開！';
-      } else if (turret.zoneBuffLabel) {
-        ctTip = ` · 🌟 ${turret.zoneBuffLabel}生效中`;
-      } else if (cfg.weapon === 'frost') {
-        ctTip = ' · ❄️搭配電漿/閃電可觸發「超導碎冰+30%傷」！';
-      } else if (cfg.conditionType === 'none' && g.wave >= 2) {
-        ctTip = ' · 💡可加🟨如果<有護盾>打更痛';
-      }
-      scratchDiagnostic.textContent = `✅ [${wInfo}]${fnTag} · 位置 ${moveLabel} · 秒傷 ${dps} · 算力 ${totalProjected}/${g.computeBudget}${ctTip}`;
+      if (turret.inHazard) ctTip = ' · ⚠️ 減速霧中';
+      else if (turret.zoneBuffLabel) ctTip = ` · 🌟 ${turret.zoneBuffLabel}`;
+      scratchDiagnostic.textContent = `✅ [${wInfo}]${fnTag} · 秒傷 ${dps} · 算力 ${totalProjected}/${g.computeBudget}${ctTip}`;
     }
 
     const nextHtml = Transpiler.blocksToHighlightedPythonHtml(
@@ -1727,7 +1895,7 @@
   }
 
   // Deploy Scratch Blocks -> Server
-  btnDeployTurret.addEventListener('click', () => {
+  function deployCurrentTurretBlocks(returnToBattle = false) {
     if (!roomState || deployInFlight) return;
     flushWorkspaceInputs();
     setMapPickMode(null);
@@ -1764,10 +1932,24 @@
           }
         }
         sound.playBlockSnap();
-        showToast(`🚀 已套用 Scratch 積木到 ${targetId}（右下方 Python 已同步執行）！`);
+        showToast(`🚀 已套用積木到 ${targetId}！`);
+        if (returnToBattle) {
+          setViewMode('battle');
+        }
       }
     );
-  });
+  }
+
+  btnDeployTurret.addEventListener('click', () => deployCurrentTurretBlocks(false));
+  if (btnApplyAndPlay) {
+    btnApplyAndPlay.addEventListener('click', () => {
+      if (dirtyDraft || (workspaceBlocks.length > 0 && canEditBlocks() && isMyTurn())) {
+        deployCurrentTurretBlocks(true);
+      } else {
+        setViewMode('battle');
+      }
+    });
+  }
 
   // Save current workspace blocks as a reusable Function
   btnSaveFn.addEventListener('click', () => {
@@ -1902,24 +2084,7 @@
 
         const hitId = renderer.getTurretAtCanvasPoint(e.clientX, e.clientY);
         if (hitId) {
-          if (hitId !== selectedTurretId) {
-            selectedTurretId = hitId;
-            dirtyDraft = false;
-            deployInFlight = false;
-            deployErrorMsg = '';
-            highlightBlockId = null;
-            setMapPickMode(null);
-            lastRenderedBlocksKey = '';
-            lastTurretPillsKey = '';
-            lastFnListKey = '';
-            renderer.setSelectedTurret(hitId);
-            if (roomState) {
-              const t = roomState.game.turrets.find((item) => item.id === hitId);
-              syncEditorFromServer(t, true);
-              renderTurretPills(roomState.game.turrets);
-              renderEditorHeader(t);
-            }
-          }
+          selectTurretById(hitId);
           return;
         }
 
@@ -1951,6 +2116,8 @@
     lastTurretPillsKey = key;
 
     turretSelectorRow.innerHTML = '';
+    if (codingTurretTabs) codingTurretTabs.innerHTML = '';
+
     turrets.forEach((t) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -1965,12 +2132,12 @@
       top.className = 'turret-pill-title';
       const label = document.createElement('span');
       const wShort = meta && meta.weapons && meta.weapons[t.weapon] ? meta.weapons[t.weapon].short : '雷射';
-      const ownerPrefix = isSync ? (mine ? '🟦' : '🟪隊友·') : '';
+      const ownerPrefix = isSync ? (mine ? '🟦' : '🟪') : '';
       label.textContent = t.active === false ? `${ownerPrefix}${t.id} · 未編寫` : `${ownerPrefix}${t.id} · ${wShort}`;
       const cost = document.createElement('span');
       cost.className = 'badge badge-cyan';
       cost.style.padding = '1px 6px';
-      cost.style.fontSize = '0.72rem';
+      cost.style.fontSize = '0.7rem';
       cost.textContent = t.inHazard ? `☠️⚡${t.cost}` : `⚡${t.cost}`;
       top.appendChild(label);
       top.appendChild(cost);
@@ -1978,47 +2145,48 @@
       const metaDiv = document.createElement('div');
       metaDiv.className = 'turret-pill-meta';
       if (t.active === false) {
-        metaDiv.textContent = '💤 空積木（點擊拉積木啟動）';
+        metaDiv.textContent = '💤 點擊寫積木';
       } else if (t.ammoRemaining === 0) {
-        metaDiv.textContent = `🔁 缺迴圈已停 · 傷${t.damage} · 速${t.fireRate}`;
+        metaDiv.textContent = `缺迴圈 · 傷${t.damage} · 速${t.fireRate}`;
       } else {
         const loopLabel = t.loopMode === 'none'
-          ? `點放餘${t.ammoRemaining}發`
-          : (t.loopMode === 'burst' ? `連發×${t.loopCount}` : `掃描×${t.loopCount}`);
-        const moveBadge = t.patrolAxis !== 'none' ? '巡邏' : (t.targetX !== t.homeX || t.targetY !== t.homeY ? '已移動' : '原地');
-        metaDiv.textContent = `傷${t.damage} · 速${t.fireRate} · ${loopLabel} · ${moveBadge}`;
+          ? `餘${t.ammoRemaining}發`
+          : (t.loopMode === 'burst' ? `連×${t.loopCount}` : `掃×${t.loopCount}`);
+        metaDiv.textContent = `傷${t.damage} · 速${t.fireRate} · ${loopLabel}`;
       }
 
       btn.appendChild(top);
       btn.appendChild(metaDiv);
       btn.addEventListener('click', () => {
-        selectedTurretId = t.id;
-        dirtyDraft = false;
-        deployInFlight = false;
-        deployErrorMsg = '';
-        highlightBlockId = null;
-        setMapPickMode(null);
-        lastRenderedBlocksKey = '';
-        lastTurretPillsKey = '';
-        lastFnListKey = '';
-        if (renderer) renderer.setSelectedTurret(t.id);
-        syncEditorFromServer(t, true);
-        renderTurretPills(turrets);
-        renderEditorHeader(t);
+        const alreadySelected = selectedTurretId === t.id;
+        selectTurretById(t.id);
+        if (alreadySelected && currentViewMode === 'battle') {
+          setViewMode('coding');
+        }
       });
       turretSelectorRow.appendChild(btn);
+
+      if (codingTurretTabs) {
+        const tabBtn = document.createElement('button');
+        tabBtn.type = 'button';
+        tabBtn.className = `coding-turret-tab ${t.id === selectedTurretId ? 'selected' : ''}`;
+        tabBtn.textContent = t.active === false ? `${t.id} (空)` : `${t.id} ${wShort}`;
+        tabBtn.addEventListener('click', () => selectTurretById(t.id));
+        codingTurretTabs.appendChild(tabBtn);
+      }
     });
   }
 
   function renderEditorHeader(turret) {
     if (!turret) return;
-    editorTurretTitle.textContent = `${turret.name} — ${turret.roleHint}`;
+    editorTurretTitle.textContent = turret.name;
+    editorTurretTitle.title = turret.roleHint || '';
     if (turret.boundFunctionName) {
       const fns = roomState && roomState.game && Array.isArray(roomState.game.functions)
         ? roomState.game.functions
         : [];
       const matched = fns.find((f) => f.id === turret.boundFunctionId || f.name === turret.boundFunctionName);
-      editorBoundFn.textContent = `🧩 套用模組：${matched ? (matched.label || matched.name) : turret.boundFunctionName}`;
+      editorBoundFn.textContent = `🧩 ${matched ? (matched.label || matched.name) : turret.boundFunctionName}`;
       editorBoundFn.classList.remove('hidden');
     } else {
       editorBoundFn.classList.add('hidden');
@@ -2357,8 +2525,8 @@
     chipLoop.classList.toggle('done', g.conceptsLearned.loops);
     chipFn.classList.toggle('done', g.conceptsLearned.functions);
 
-    btnPauseSolo.classList.toggle('hidden', room.turnMode !== 'solo');
-    btnPauseSolo.textContent = g.status === 'paused' ? '▶ 繼續戰場' : '⏸ 暫停思考';
+    btnPauseSolo.classList.toggle('hidden', room.turnMode !== 'solo' || currentViewMode === 'coding');
+    btnPauseSolo.textContent = g.status === 'paused' ? '▶ 繼續' : '⏸ 暫停';
 
     if (room.teacherBanner && room.teacherBanner.id !== dismissedBannerId) {
       teacherBannerText.textContent = `👩‍🏫 老師提示（${room.teacherBanner.time}）：${room.teacherBanner.text}`;
@@ -2431,55 +2599,60 @@
     }
     if (room.turnMode === 'solo') {
       turnBanner.className = 'turn-banner solo-mode';
-      turnTitle.textContent = '🧑‍💻 單人 Scratch 戰術台 — 拖拉積木＋對照學 Python';
-      turnSubtitle.textContent = '從積木區拉「移動、切換武器、變數、如果、迴圈、函式」進工作區，隨時按暫停思考！';
+      if (room.pausedByCoding) {
+        turnTitle.textContent = '⏸ 寫程式中（遊戲已暫停）';
+        turnSubtitle.textContent = '放好積木後點「▶ 套用並回戰場」或切回「🎮 戰場畫面」繼續';
+      } else if (g.status === 'paused') {
+        turnTitle.textContent = '⏸ 戰場暫停中';
+        turnSubtitle.textContent = '';
+      } else {
+        turnTitle.textContent = '🎮 戰場進行中';
+        turnSubtitle.textContent = '點右方「寫程式（暫停）」可隨時停下來改砲塔積木';
+      }
       turnTimerPill.classList.add('hidden');
       btnEndTurn.classList.add('hidden');
       teammateTipsBar.classList.add('hidden');
     } else if (room.turnMode === 'sync') {
       turnBanner.className = myTurn ? 'turn-banner my-turn' : 'turn-banner partner-turn';
-      turnTitle.textContent = `⚡ 雙人同步分工聯防！你操盤 ${owned.join(' / ')} 砲塔（隨時可同時改！）`;
-      turnSubtitle.textContent = multiConnected
-        ? `你負責 ${owned.join(' / ')}，隊友「${partnerPlayer ? partnerPlayer.nickname : '夥伴'}」即時操盤另一側！共用場上金幣＆戰術晶片。`
-        : '隊友尚未連線，你目前可先同時編輯全部 4 座砲塔；隊友進場後將自動分區！';
+      const codingList = Array.isArray(room.codingPlayers) ? room.codingPlayers : [];
+      if (room.pausedByCoding && codingList.length > 0) {
+        turnTitle.textContent = `⏸「${codingList.join('、')}」放積木中（遊戲暫停）`;
+        turnSubtitle.textContent = `你操控 ${owned.join('/')}`;
+      } else {
+        turnTitle.textContent = `⚡ 同步聯防：你控 ${owned.join(' / ')}`;
+        turnSubtitle.textContent = multiConnected
+          ? `隊友：${partnerPlayer ? partnerPlayer.nickname : '夥伴'}`
+          : '隊友尚未加入（暫可全控）';
+      }
       turnTimerPill.classList.add('hidden');
       btnEndTurn.classList.add('hidden');
       teammateTipsBar.classList.add('hidden');
     } else if (myTurn) {
       turnBanner.className = 'turn-banner my-turn';
-      if (mePlayer && mePlayer.isTeacher) {
-        turnTitle.textContent = `👩‍🏫 第 ${room.turnNumber} 回合：輪到老師示範調整 Scratch 砲塔！`;
-        turnSubtitle.textContent = partnerDisconnected
-          ? `⚠️ 學生「${partnerPlayer.nickname}」目前連線中斷，等待對方自動重連後即可換手與繼續倒數！`
-          : '老師調整完按下「🚀 套用這組 Scratch 積木到砲塔」，可隨時按右側換學生動手設計！';
+      if (room.pausedByCoding) {
+        turnTitle.textContent = `⏸ 第 ${room.turnNumber} 回合 · 寫程式暫停中`;
       } else {
-        turnTitle.textContent = `🎯 第 ${room.turnNumber} 回合：輪到你拼裝 Scratch 砲塔積木！`;
-        turnSubtitle.textContent = partnerDisconnected
-          ? `⚠️ 隊友「${partnerPlayer.nickname}」目前連線中斷，等待對方自動重連後即可換手與繼續倒數！`
-          : (partnerPlayer && partnerPlayer.isTeacher
-            ? '老師正在旁邊幫你加油＆撿場上金幣！拼完按「🚀 套用」或右側換老師示範。'
-            : '拼完按下「🚀 套用這組 Scratch 積木到砲塔」，完成調整可按右側換隊友接手。');
+        turnTitle.textContent = mePlayer && mePlayer.isTeacher
+          ? `👩‍🏫 第 ${room.turnNumber} 回合：輪到老師`
+          : `🎯 第 ${room.turnNumber} 回合：輪到你`;
       }
+      turnSubtitle.textContent = partnerDisconnected
+        ? `⚠️ 隊友「${partnerPlayer.nickname}」重連中`
+        : '';
       turnTimerPill.textContent = partnerDisconnected
-        ? '等待隊友重連'
-        : (g.firstWaveWaitingStart ? '備戰暫停計時（可點換手）' : `剩餘 ${room.turnTimeLeft} 秒`);
+        ? '等待重連'
+        : (g.firstWaveWaitingStart ? '備戰不倒數' : `剩 ${room.turnTimeLeft}s`);
       turnTimerPill.classList.remove('hidden');
-      btnEndTurn.textContent = partnerDisconnected ? '⏳ 等待隊友重連中...' : '完成調整，換隊友接手 ↻';
+      btnEndTurn.textContent = partnerDisconnected ? '⏳ 重連中' : '↻ 換隊友';
       btnEndTurn.classList.remove('hidden');
       teammateTipsBar.classList.add('hidden');
     } else {
       turnBanner.className = 'turn-banner partner-turn';
-      if (partnerPlayer && partnerPlayer.isTeacher) {
-        turnTitle.textContent = `👩‍🏫 老師「${room.activeTurnNickname || '老師'}」正在示範調整砲塔積木...`;
-        turnSubtitle.textContent = '邊看老師怎麼拼 Scratch 積木＋對照 Python，邊點地圖撿 🪙 金幣或發送 🎯 集火標記！';
-      } else if (mePlayer && mePlayer.isTeacher) {
-        turnTitle.textContent = `🎓 學生「${room.activeTurnNickname || '學生'}」正在挑戰設計砲塔積木...`;
-        turnSubtitle.textContent = '老師可點左側地圖幫忙撿 🪙 金幣道具、點地圖標記 🎯 引導集火、或發送提示！';
-      } else {
-        turnTitle.textContent = `⏳ 隊友「${room.activeTurnNickname || '夥伴'}」正在調整砲塔積木...`;
-        turnSubtitle.textContent = '你可以點地圖撿 🪙 金幣道具、點空白處發出 🎯 集火標記、或用下方快速提醒給隊友！';
-      }
-      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰暫停計時' : `換手倒數 ${room.turnTimeLeft} 秒`;
+      turnTitle.textContent = room.pausedByCoding
+        ? `⏸「${room.activeTurnNickname || '隊友'}」放積木中（暫停）`
+        : `⏳「${room.activeTurnNickname || '隊友'}」回合中`;
+      turnSubtitle.textContent = '可點地圖撿 🪙 或發 🎯 標記';
+      turnTimerPill.textContent = g.firstWaveWaitingStart ? '備戰中' : `${room.turnTimeLeft}s`;
       turnTimerPill.classList.remove('hidden');
       btnEndTurn.classList.add('hidden');
 
@@ -2491,7 +2664,7 @@
           b.textContent = tipText;
           b.addEventListener('click', () => {
             socket.emit('student:send_tip', { tip: tipText });
-            showToast('已發送策略提示給隊友！');
+            showToast('已送出提示！');
           });
           teammateTipsBar.appendChild(b);
         });
@@ -2506,8 +2679,8 @@
     btnSkipWave.classList.toggle('hidden', isWaitingFirst || g.waveDelay <= 0 || g.status !== 'playing');
     const modStr = g.waveModifier ? `【${g.waveModifier.label}】 ` : '';
     waveHintBox.textContent = isWaitingFirst
-      ? '🛠️ 開局備戰提示：時間尚未倒數！先幫砲塔放好「武器＋變數＋重複迴圈」，按下「🚀 開始第 1 波倒數」就會開始計時出怪！（寒霜＋閃電/重砲可觸發 ❄️⚡超導碎冰！）'
-      : `🌊 ${g.waveTitle} — ${modStr}${g.waveHint}`;
+      ? '🛠️ 備戰中：先去「寫積木程式」設砲塔'
+      : `🌊 ${g.waveTitle}${modStr ? ' · ' + modStr : ''}`;
 
     updateSkillButtons(g);
 
@@ -2516,7 +2689,7 @@
     renderTurretPills(g.turrets);
     renderEditorHeader(currentTurret);
 
-    const canEdit = myTurn && g.status === 'playing';
+    const canEdit = myTurn && canEditBlocks();
     const isEditingInput = canEdit && scratchBlocksList.contains(document.activeElement)
       && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT');
     if ((!dirtyDraft && !deployInFlight && !isEditingInput) || !myTurn) {
@@ -2526,12 +2699,15 @@
     }
 
     btnDeployTurret.disabled = !canEdit;
-    btnSaveFn.disabled = !(g.status === 'playing' && (myTurn || room.turnMode === 'sync'));
+    if (btnApplyAndPlay) {
+      btnApplyAndPlay.disabled = !myTurn || g.status === 'victory' || g.status === 'defeat';
+    }
+    btnSaveFn.disabled = !(canEditBlocks() && (myTurn || room.turnMode === 'sync'));
     btnDeployTurret.textContent = myTurn
-      ? '🚀 套用這組 Scratch 積木到砲塔'
+      ? '🚀 套用積木'
       : (room.turnMode === 'sync'
-        ? `🟪 ${currentTurret.id} 由隊友操控！請點選你的 ${owned.join('/')} 砲塔`
-        : `⏳ 等待 ${room.activeTurnNickname || '隊友'} 回合結束...`);
+        ? `🟪 ${currentTurret.id} 由隊友控制`
+        : `⏳ 等待 ${room.activeTurnNickname || '隊友'}`);
 
     renderFunctionList(g.functions, currentTurret, canEdit);
 

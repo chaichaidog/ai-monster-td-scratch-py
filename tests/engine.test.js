@@ -1121,6 +1121,49 @@ test('Scratch chest quizzes and bounties avoid Python syntax and reconnect keeps
   assert.equal(room.activeTurnPlayerId, j1.player.id);
 });
 
+test('View mode switching pauses game in coding view while allowing block edits, and resumes in battle view', () => {
+  const rm = new RoomManager();
+  const { room } = rm.createRoom({ code: '199', grade: 'G7', maxPlayers: 1 });
+  const p = rm.joinRoom({ code: '199', nickname: '專心寫積木', grade: 'G7', socketId: 'sc1' }).player;
+  rm.setPlayerReady('199', p.id, true);
+  rm.handleStartFirstWave('199', p.id, false);
+  assert.equal(room.game.status, 'playing');
+
+  // Switching to coding view auto-pauses the game so monsters freeze
+  const prevDelay = room.game.waveDelay;
+  const codingRes = rm.setPlayerViewMode('199', p.id, 'coding');
+  assert.equal(codingRes.ok, true);
+  assert.equal(room.pausedByCoding, true);
+  assert.equal(room.game.status, 'paused');
+  for (let i = 0; i < 40; i++) rm.tickAll(0.05);
+  assert.equal(room.game.waveDelay, prevDelay, 'Game simulation must stay paused in coding view');
+
+  // Student CAN still edit & deploy Scratch blocks while paused for coding!
+  const deployWhileCoding = rm.handleUpdateTurret('199', p.id, 'T1', {
+    blocks: [
+      { id: 'v1', type: 'set_var', varName: 'damage', op: 'set', value: 25 },
+      { id: 'l1', type: 'loop', loopMode: 'burst', count: 2 }
+    ]
+  });
+  assert.equal(deployWhileCoding.ok, true);
+  assert.equal(deployWhileCoding.turret.damage, 25);
+
+  // Switching back to battle view resumes the game
+  const battleRes = rm.setPlayerViewMode('199', p.id, 'battle');
+  assert.equal(battleRes.ok, true);
+  assert.equal(room.pausedByCoding, false);
+  assert.equal(room.game.status, 'playing');
+
+  // If teacher explicitly paused, student returning to battle view does NOT override teacher pause
+  rm.togglePause('199', '👩‍🏫 老師', true);
+  assert.equal(room.pausedByTeacher, true);
+  assert.equal(room.game.status, 'paused');
+  assert.equal(rm.handleUpdateTurret('199', p.id, 'T1', { blocks: [] }).ok, false);
+  rm.setPlayerViewMode('199', p.id, 'coding');
+  rm.setPlayerViewMode('199', p.id, 'battle');
+  assert.equal(room.game.status, 'paused', 'Teacher pause must remain active');
+});
+
 
 
 

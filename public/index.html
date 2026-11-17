@@ -10,12 +10,7 @@
   <header class="top-nav">
     <div class="brand">
       <div class="brand-icon">🧱</div>
-      <div>
-        <div>AI 怪物塔防戰（Scratch 積木 × Python 對照）</div>
-        <div style="font-size: 0.74rem; color: var(--text-muted); font-weight: 500;">
-          拖拉 Scratch 積木防守基地 · 底下即時學 Python 程式碼！
-        </div>
-      </div>
+      <div>AI 怪物塔防戰</div>
     </div>
     <div class="nav-actions">
       <button id="btn-sound-toggle" class="btn btn-sm" type="button">🔊 音效開</button>
@@ -166,47 +161,52 @@
     </div>
   </section>
 
-  <!-- Step 3: 2D Battlefield + Scratch Workspace + Python Mirror -->
-  <section id="view-game" class="game-shell hidden">
-    <!-- Top HUD -->
+  <!-- Step 3: Full-screen Battle Mode OR Full-screen Scratch Coding Mode -->
+  <section id="view-game" class="game-shell mode-battle hidden">
+    <!-- Top Compact HUD + View Switcher -->
     <div class="hud-bar">
       <div class="hud-stats">
         <span id="hud-room-badge" class="badge badge-cyan">房號 ---</span>
         <span id="hud-grade-badge" class="badge badge-g7">國一</span>
 
         <div class="stat-pill">
-          <span>🌊 波數</span>
+          <span>🌊</span>
           <strong id="hud-wave">1 / 8</strong>
         </div>
 
         <div class="stat-pill">
-          <span>🛡️ 基地</span>
+          <span>🛡️</span>
           <div class="hp-bar-wrap"><div id="hud-hp-fill" class="hp-bar-fill" style="width: 100%;"></div></div>
           <strong id="hud-hp-text">100</strong>
         </div>
 
         <div class="stat-pill">
-          <span>⚡ 算力</span>
+          <span>⚡</span>
           <strong id="hud-compute" style="color: var(--cyan);">0 / 150</strong>
         </div>
 
         <div class="stat-pill">
-          <span>🪙 金幣</span>
+          <span>🪙</span>
           <strong id="hud-coins" style="color: #fde047;">30</strong>
         </div>
 
         <div class="stat-pill">
-          <span>🏆 積分</span>
+          <span>🏆</span>
           <strong id="hud-score" style="color: var(--amber);">0</strong>
         </div>
       </div>
 
-      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-        <div class="concept-tracker">
-          <span id="chip-var" class="concept-chip">📦 變數</span>
-          <span id="chip-cond" class="concept-chip">🔀 條件</span>
-          <span id="chip-loop" class="concept-chip">🔁 迴圈</span>
-          <span id="chip-fn" class="concept-chip">🧩 函式</span>
+      <div class="hud-right-actions">
+        <div class="view-mode-switch" role="tablist" aria-label="畫面切換">
+          <button id="btn-mode-battle" class="mode-switch-btn active" type="button">🎮 戰場畫面</button>
+          <button id="btn-mode-coding" class="mode-switch-btn" type="button">🧱 寫積木程式（暫停）</button>
+        </div>
+
+        <div class="concept-tracker" title="程式觀念進度">
+          <span id="chip-var" class="concept-chip">變數</span>
+          <span id="chip-cond" class="concept-chip">條件</span>
+          <span id="chip-loop" class="concept-chip">迴圈</span>
+          <span id="chip-fn" class="concept-chip">函式</span>
         </div>
         <button id="btn-pause-solo" class="btn btn-sm hidden" type="button">⏸ 暫停</button>
         <button id="btn-leave-game" class="btn btn-sm btn-danger" type="button">離開</button>
@@ -219,115 +219,118 @@
       <button id="btn-dismiss-banner" class="btn btn-sm" type="button">知道了</button>
     </div>
 
-    <!-- Turn / Control Banner -->
+    <!-- Turn / Control Strip -->
     <div id="turn-banner" class="turn-banner solo-mode">
-      <div>
-        <strong id="turn-title">載入回合狀態...</strong>
-        <div id="turn-subtitle" style="font-size: 0.84rem; color: var(--text-muted); margin-top: 2px;"></div>
+      <div class="turn-info-wrap">
+        <strong id="turn-title">載入中...</strong>
+        <span id="turn-subtitle" class="turn-sub-inline"></span>
         <div id="teammate-tips-bar" class="tip-bar hidden"></div>
       </div>
-      <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+      <div class="turn-actions-wrap">
         <span id="turn-timer-pill" class="badge badge-amber hidden">剩餘 25 秒</span>
-        <button id="btn-test-dummy" class="btn btn-sm hidden" type="button" title="在準備階段放出一隻無傷害的訓練靶怪，測試你的砲塔武器、射程與如果條件！">🧪 派出測試靶怪</button>
-        <button id="btn-start-wave-1" class="btn btn-emerald btn-sm hidden" type="button">🚀 開始第 1 波倒數</button>
+        <button id="btn-test-dummy" class="btn btn-sm hidden" type="button" title="放出無傷訓練靶怪，測試砲塔火力與條件">🧪 試射靶怪</button>
+        <button id="btn-start-wave-1" class="btn btn-emerald btn-sm hidden" type="button">🚀 開始第 1 波</button>
         <button id="btn-skip-wave" class="btn btn-sm hidden" type="button">⚡ 立即出怪</button>
-        <button id="btn-end-turn" class="btn btn-amber hidden" type="button">完成調整，換隊友接手 ↻</button>
+        <button id="btn-end-turn" class="btn btn-amber btn-sm hidden" type="button">↻ 換隊友</button>
+        <button id="btn-goto-coding" class="btn btn-primary btn-sm" type="button">🧱 寫程式（暫停）</button>
       </div>
     </div>
 
-    <!-- Active Relics + Cross-Room Read-Only Leaderboard Strip -->
-    <div id="status-strip-row" class="status-strip-row">
-      <div id="relics-strip" class="relics-strip">✨ 尚未取得戰術晶片（第 3、6、9 波 3 選 1）</div>
-      <div id="class-leaderboard-bar" class="class-leaderboard-bar hidden"></div>
-    </div>
-
-    <!-- Battlefield + Scratch Workspace -->
+    <!-- Battlefield Screen OR Full-Screen Scratch Coding Screen -->
     <div class="battle-workspace">
-      <!-- Left: 2D Canvas & Skills -->
+      <!-- Mode A: Full Battlefield -->
       <div class="arena-panel">
+        <div id="map-pick-banner" class="alert alert-info hidden" style="margin: 0 0 8px; padding: 6px 12px; font-size: 0.84rem; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+          <span>🎯 <strong>地圖選點中</strong>：點擊戰場地圖任一位置，選好後自動回到積木頁面！</span>
+          <button id="btn-cancel-map-pick" class="btn btn-sm" type="button">取消</button>
+        </div>
+
         <div class="canvas-frame">
           <canvas id="battle-canvas"></canvas>
           <div id="first-wave-prep-cta" class="prep-cta-overlay hidden">
             <div class="prep-cta-text">
-              🛠️ <strong>第 1 波備戰時間（計時尚未開始）</strong>：請先拖拉右側 Scratch 積木並按套用，也可先點左側「測試靶怪」試射！
+              🛠️ <strong>備戰中</strong>：先點「寫積木程式」放好砲塔，好了再按開始第 1 波！
             </div>
             <div class="prep-cta-actions">
-              <button id="btn-overlay-test-dummy" class="btn btn-sm" type="button">🧪 派出測試靶怪試射</button>
-              <button id="btn-overlay-start-wave" class="btn btn-emerald" type="button">🚀 開始第 1 波倒數（計時 15 秒後出怪）</button>
+              <button id="btn-overlay-coding" class="btn btn-primary btn-sm" type="button">🧱 寫積木程式</button>
+              <button id="btn-overlay-test-dummy" class="btn btn-sm" type="button">🧪 試射</button>
+              <button id="btn-overlay-start-wave" class="btn btn-emerald btn-sm" type="button">🚀 開始第 1 波</button>
             </div>
           </div>
         </div>
 
-        <!-- Commander Skills -->
-        <div id="skill-bar" class="skill-bar"></div>
-
-        <!-- Python Code Bounty Mission Bar -->
-        <div id="bounty-bar" class="bounty-bar">
-          <div id="bounty-text">🕵️ 載入秘密懸賞任務中...</div>
-          <span id="bounty-progress" class="badge badge-amber">0 / 5</span>
+        <div class="arena-dock">
+          <div id="turret-selector-row" class="turret-selector-row"></div>
+          <div id="skill-bar" class="skill-bar"></div>
+          <div class="arena-bottom-strip">
+            <div id="bounty-bar" class="bounty-bar">
+              <div id="bounty-text">🕵️ 載入積木任務中...</div>
+              <span id="bounty-progress" class="badge badge-amber">0 / 5</span>
+            </div>
+            <div id="status-strip-row" class="status-strip-row">
+              <div id="relics-strip" class="relics-strip">✨ 晶片 (第3/6/9波)</div>
+              <div id="class-leaderboard-bar" class="class-leaderboard-bar hidden"></div>
+            </div>
+            <div id="wave-hint-box" class="wave-hint-chip">🌊 第 1 波</div>
+          </div>
         </div>
-
-        <div id="map-pick-banner" class="alert alert-info hidden" style="margin: 8px 0 0; padding: 8px 12px; font-size: 0.84rem; display: flex; justify-content: space-between; align-items: center; gap: 8px;">
-          <span>🎯 <strong>地圖選點模式啟動中</strong>：請直接在上方戰場地圖點擊你要移動的位置！</span>
-          <button id="btn-cancel-map-pick" class="btn btn-sm" type="button">取消</button>
-        </div>
-
-        <div id="wave-hint-box" class="alert alert-info" style="margin: 10px 0 0; padding: 9px 12px; font-size: 0.85rem;">
-          💡 波次提示載入中...
-        </div>
-
-        <div id="turret-selector-row" class="turret-selector-row"></div>
       </div>
 
-      <!-- Right: Scratch Block Builder + Live Python Comparison -->
+      <!-- Mode B: Full Scratch Coding Workspace -->
       <div class="code-panel">
-        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-          <div>
-            <div style="font-size: 0.78rem; color: var(--text-muted);">點擊地圖砲塔或左側按鈕切換目標</div>
-            <h3 id="editor-turret-title" style="margin: 2px 0 0; font-size: 1.05rem;">前線哨兵塔 #1</h3>
-          </div>
-          <div style="text-align: right;">
+        <div class="coding-topbar">
+          <div class="coding-turret-bar">
+            <div id="coding-turret-tabs" class="coding-turret-tabs"></div>
+            <h3 id="editor-turret-title" style="margin: 0; font-size: 1rem;">前線哨兵塔 #1</h3>
             <span id="editor-bound-fn" class="badge badge-g7 hidden">函式綁定</span>
-            <span id="editor-cost-pill" class="badge badge-cyan">算力預估: 25</span>
+            <span id="editor-cost-pill" class="badge badge-cyan">算力預估: 0</span>
+          </div>
+          <div class="coding-actions-bar">
+            <button id="btn-toggle-py" class="btn btn-sm" type="button">🐍 隱藏 Python</button>
+            <button id="btn-deploy-turret" class="btn btn-primary btn-sm" type="button">🚀 套用積木</button>
+            <button id="btn-apply-and-play" class="btn btn-emerald btn-sm" type="button">▶ 套用並回戰場</button>
           </div>
         </div>
 
         <div class="code-tabs" style="grid-template-columns: repeat(3, 1fr);">
-          <button type="button" class="code-tab active-var" data-tab="scratch">🧱 Scratch 積木拼圖</button>
-          <button type="button" class="code-tab" data-tab="fn">🧩 我的函式積木</button>
-          <button type="button" class="code-tab" data-tab="guide">📖 怪物與 Py 對照卡</button>
+          <button type="button" class="code-tab active-var" data-tab="scratch">🧱 Scratch 積木</button>
+          <button type="button" class="code-tab" data-tab="fn">🧩 我的函式</button>
+          <button type="button" class="code-tab" data-tab="guide">📖 怪物弱點</button>
         </div>
 
-        <!-- Tab 1: Scratch Drag & Drop Workspace -->
-        <div id="tab-scratch" class="control-box" style="padding: 10px;">
-          <div class="scratch-layout">
-            <!-- Left: Scratch Block Palette -->
+        <!-- Tab 1: Wide No-Scroll Scratch Drag & Drop Workspace -->
+        <div id="tab-scratch" class="control-box scratch-tab-shell">
+          <div id="scratch-layout" class="scratch-layout">
+            <!-- Left: Scratch Block Palette (Also Drag-to-Delete Zone) -->
             <div id="scratch-palette" class="scratch-palette">
+              <div id="scratch-trash-banner" class="scratch-trash-banner hidden">
+                🗑️ 拖到這裡放開即可刪除
+              </div>
               <div class="scratch-cat-label">🟦 動作與武器</div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="move_to">
-                <span>📍 移動砲塔到座標</span><span>＋</span>
+                <span>📍 移動到座標</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="patrol">
-                <span>🛸 來回巡邏移動</span><span>＋</span>
+                <span>🛸 來回巡邏</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="set_weapon">
-                <span>⚡ 切換武器類型</span><span>＋</span>
+                <span>⚡ 切換武器</span><span>＋</span>
               </div>
 
               <div class="scratch-cat-label">🟧 變數</div>
               <div class="scratch-palette-item sb-var" draggable="true" data-block-type="set_var_set">
-                <span>📦 將變數設為 (...)</span><span>＋</span>
+                <span>📦 變數設為 (=)</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-var" draggable="true" data-block-type="set_var_add">
-                <span>➕ 將變數增加 (...)</span><span>＋</span>
+                <span>➕ 變數增加 (+=)</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟨 控制與條件</div>
+              <div class="scratch-cat-label">🟨 條件</div>
               <div class="scratch-palette-item sb-cond" draggable="true" data-block-type="if_else">
-                <span>🔀 如果 &lt;條件&gt; 那麼</span><span>＋</span>
+                <span>🔀 如果 &lt;條件&gt;</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🩷 重複迴圈</div>
+              <div class="scratch-cat-label">🩷 迴圈</div>
               <div class="scratch-palette-item sb-loop" draggable="true" data-block-type="loop_burst">
                 <span>🔁 重複 N 次連發</span><span>＋</span>
               </div>
@@ -335,86 +338,83 @@
                 <span>📡 掃描 N 隻同時打</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟩 我的函式</div>
+              <div class="scratch-cat-label">🟩 函式</div>
               <div class="scratch-palette-item sb-fn" draggable="true" data-block-type="call_fn">
-                <span>🧩 呼叫函式積木</span><span>＋</span>
+                <span>🧩 呼叫函式</span><span>＋</span>
               </div>
             </div>
 
-            <!-- Right: Scratch Script Workspace -->
+            <!-- Middle: Spacious Scratch Workspace -->
             <div id="scratch-workspace" class="scratch-workspace">
-              <div class="scratch-hat">🏁 當「AI 砲塔啟動」時執行</div>
+              <div class="scratch-hat-row">
+                <div class="scratch-hat">🏁 當「砲塔啟動」時</div>
+                <span class="scratch-drag-tip">💡 把右邊積木拖回左側即可刪除</span>
+              </div>
               <div id="scratch-blocks-list" style="display: flex; flex-direction: column; gap: 7px;"></div>
+            </div>
+
+            <!-- Right: Collapsible Python Mirror -->
+            <div id="python-mirror-col" class="python-mirror-col">
+              <div style="font-size: 0.78rem; color: var(--amber); font-weight: 700; margin-bottom: 6px;">
+                🐍 Python 對照（# 後為中文）
+              </div>
+              <div id="code-preview" class="code-preview" style="white-space: pre-wrap;"></div>
             </div>
           </div>
 
           <div id="scratch-diagnostic" class="py-diagnostic ok" style="margin-top: 8px;">
-            💡 把左側積木拖曳或點「＋」加進右邊，並上下拖拉排序！
+            💡 點「＋」或拖進右邊，拖回左邊即可刪除！
           </div>
         </div>
 
         <!-- Tab 2: My Blocks (Functions) -->
         <div id="tab-fn" class="control-box hidden">
-          <div class="form-label">團隊函式積木庫（存成共用戰術模組，可一鍵套用多座砲塔）</div>
+          <div class="form-label">共用函式積木（套用多座砲塔可省 15% 算力）</div>
           <div id="fn-list" class="fn-list"></div>
 
           <div style="border-top: 1px solid var(--border); padding-top: 10px;">
             <div style="font-size: 0.82rem; font-weight: 700; margin-bottom: 6px; color: var(--emerald);">
-              ＋ 把目前砲塔的積木組合存成「共用函式積木」：
+              ＋ 將目前砲塔的積木存成「共用函式」：
             </div>
             <div style="display: grid; grid-template-columns: 1fr auto; gap: 8px;">
-              <input id="input-fn-name" class="input" type="text" placeholder="取個名字（例如：冰霜巡邏、破盾連發）" maxlength="20" style="padding: 8px 10px;">
+              <input id="input-fn-name" class="input" type="text" placeholder="取個名字（例如：冰霜巡邏）" maxlength="20" style="padding: 8px 10px;">
               <button id="btn-save-fn" class="btn btn-emerald btn-sm" type="button" style="white-space: nowrap;">💾 儲存積木組</button>
-            </div>
-            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">
-              💡 支援中文命名！修改同名積木組時，所有呼叫該模組的砲塔會同步升級（對應 Python 的 <code>def</code>）。
             </div>
           </div>
         </div>
 
-        <!-- Tab 3: Monster Intel & Scratch->Python Cheat Sheet -->
+        <!-- Tab 3: Monster Intel & Cheat Sheet -->
         <div id="tab-guide" class="control-box hidden">
-          <div class="form-label">👾 AI 怪物圖鑑與弱點情報（設計「如果 ＜條件＞」積木必看）</div>
+          <div class="form-label">👾 怪物弱點一覽</div>
           <div id="monster-guide-grid" class="monster-guide-grid" style="margin-bottom: 12px;"></div>
-          <div class="form-label">📚 Scratch 積木 ↔ 白話效果 ↔ Python 對照卡</div>
+          <div class="form-label">📚 積木對照卡</div>
           <div class="cheat-sheet-list">
             <div class="cheat-row">
               <span class="cheat-pill sb-motion">📍 移動／巡邏</span>
-              <span class="cheat-desc">砲塔飛到座標或來回巡邏</span>
+              <span class="cheat-desc">移動砲塔位置或來回巡邏</span>
               <code class="cheat-py">turret.move_to(390, 270)</code>
             </div>
             <div class="cheat-row">
               <span class="cheat-pill sb-var">📦 變數設為／增加</span>
-              <span class="cheat-desc">設定傷害、攻速或往上累加</span>
+              <span class="cheat-desc">調整傷害、攻速或射程</span>
               <code class="cheat-py">damage = 30 / damage += 10</code>
             </div>
             <div class="cheat-row">
-              <span class="cheat-pill sb-cond">🔀 如果…那麼…否則</span>
-              <span class="cheat-desc">遇到護盾怪、快怪或 BOSS 優先打</span>
-              <code class="cheat-py">if monster.shield &gt; 0: ... else:</code>
+              <span class="cheat-pill sb-cond">🔀 如果…那麼</span>
+              <span class="cheat-desc">優先打護盾怪、快怪或 BOSS</span>
+              <code class="cheat-py">if monster.shield &gt; 0:</code>
             </div>
             <div class="cheat-row">
               <span class="cheat-pill sb-loop">🔁 重複 N 次</span>
-              <span class="cheat-desc">連射同一隻怪，或掃描多隻怪</span>
+              <span class="cheat-desc">連續射擊或同時掃描多隻怪</span>
               <code class="cheat-py">for i in range(3):</code>
             </div>
             <div class="cheat-row">
               <span class="cheat-pill sb-fn">🧩 我的函式</span>
-              <span class="cheat-desc">把常用招式存起來，多塔共用</span>
+              <span class="cheat-desc">存成共用模組，多塔一鍵套用</span>
               <code class="cheat-py">def 破盾連發():</code>
             </div>
           </div>
-        </div>
-
-        <button id="btn-deploy-turret" class="btn btn-primary" type="button" style="width: 100%;">
-          🚀 套用這組 Scratch 積木到砲塔
-        </button>
-
-        <div>
-          <div style="font-size: 0.78rem; color: var(--amber); font-weight: 700; margin-bottom: 4px;">
-            🐍 Python 魔法即時翻譯機（左邊是 Python 寫法，右邊 # 是中文翻譯）：
-          </div>
-          <div id="code-preview" class="code-preview" style="white-space: pre-wrap;"></div>
         </div>
       </div>
     </div>

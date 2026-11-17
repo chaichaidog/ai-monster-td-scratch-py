@@ -225,7 +225,7 @@ io.on('connection', (socket) => {
 
   socket.on('teacher:toggle_pause', ({ code } = {}, ack) => {
     if (socket.data.role !== 'teacher') return;
-    const res = roomManager.togglePause(code, '👩‍🏫 老師');
+    const res = roomManager.togglePause(code, '👩‍🏫 老師', true);
     if (res.ok) {
       broadcastRoomState(res.room);
       broadcastTeacherDashboard();
@@ -539,12 +539,22 @@ io.on('connection', (socket) => {
       return;
     }
     const player = room.players.find((p) => p.id === socket.data.playerId);
-    const res = roomManager.togglePause(socket.data.roomCode, player ? player.nickname : '玩家');
+    const res = roomManager.togglePause(socket.data.roomCode, player ? player.nickname : '玩家', false);
     if (res.ok) {
       broadcastRoomState(res.room);
       broadcastTeacherDashboard();
     }
     if (typeof ack === 'function') ack({ ok: res.ok, error: res.error });
+  });
+
+  socket.on('student:set_view_mode', ({ mode } = {}, ack) => {
+    if (!ensureStudentJoined(socket, ack)) return;
+    const res = roomManager.setPlayerViewMode(socket.data.roomCode, socket.data.playerId, mode);
+    if (res.ok) {
+      broadcastRoomState(res.room);
+      broadcastTeacherDashboard();
+    }
+    if (typeof ack === 'function') ack({ ok: res.ok, status: res.status, error: res.error });
   });
 
   socket.on('student:skip_wave_delay', (_payload, ack) => {

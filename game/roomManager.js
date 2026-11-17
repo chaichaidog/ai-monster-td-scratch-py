@@ -124,6 +124,9 @@ class RoomManager {
       feedbacks: [],
       actionLog: [],
       teacherBanner: null,
+      pausedByTeacher: false,
+      pausedByUser: false,
+      pausedByCoding: false,
       createdAt: Date.now(),
       lastActivityAt: Date.now()
     };
@@ -347,7 +350,8 @@ class RoomManager {
       isTeacher: teacherJoining,
       slotIndex: room.players.length + 1,
       ready: room.phase === 'playing',
-      connected: true
+      connected: true,
+      inCodingView: false
     };
 
     room.players.push(player);
@@ -384,6 +388,7 @@ class RoomManager {
         this.logAction(room, player.nickname, '離開了等候室');
       } else {
         player.connected = false;
+        player.inCodingView = false;
         this.logAction(room, player.nickname, explicitLeave ? '離開了房間' : '暫時斷線');
         // In 2-player mode, pass control if active player disconnected and teammate is connected
         if (room.turnMode === 'turn' && room.activeTurnPlayerId === player.id) {
@@ -393,6 +398,7 @@ class RoomManager {
             room.turnTimeLeft = room.turnDuration;
           }
         }
+        this.syncRoomPauseState(room);
       }
       affectedRooms.push(room);
     }
@@ -452,8 +458,11 @@ class RoomManager {
     if (room.phase !== 'playing') {
       return { ok: false, error: '尚未進入戰鬥階段' };
     }
-    if (room.game.status !== 'playing') {
-      return { ok: false, error: room.game.status === 'paused' ? '遊戲目前暫停中' : '本局已經結束' };
+    if (room.game.status === 'victory' || room.game.status === 'defeat') {
+      return { ok: false, error: '本局已經結束' };
+    }
+    if (room.game.status === 'paused' && room.pausedByTeacher) {
+      return { ok: false, error: '老師目前暫停戰場中' };
     }
     if (room.turnMode === 'solo') {
       return { ok: true };
@@ -699,6 +708,10 @@ class RoomManager {
     const ok = continueEndlessMode(room.game);
     if (!ok) return { ok: false, error: '需先守住預設波次才能進入無盡模式' };
 
+    room.pausedByTeacher = false;
+    room.pausedByUser = false;
+    room.pausedByCoding = false;
+    room.players.forEach((p) => { p.inCodingView = false; });
     this.logAction(room, player.nickname, '開啟了「🔥 無盡生存模式」！');
     return { ok: true, room };
   }
@@ -736,9 +749,11 @@ class RoomManager {
     }
 
     this.flushPendingDraftsForPlayer(room, playerId, '交棒換手');
+    if (currentPlayer) currentPlayer.inCodingView = false;
     room.activeTurnPlayerId = nextPlayer.id;
     room.turnNumber += 1;
     room.turnTimeLeft = room.turnDuration;
+    this.syncRoomPauseState(room);
     this.logAction(
       room,
       currentPlayer ? currentPlayer.nickname : '玩家',
@@ -760,7 +775,37 @@ class RoomManager {
     return { ok: true, room, sender: player.nickname, tip: cleanTip };
   }
 
-  togglePause(code, actorLabel = '玩家') {
+  syncRoomPauseState(room) {
+    if (!room || !room.game || room.phase !== 'playing') return;
+    if (room.game.status === 'victory' || room.game.status === 'defeat') return;
+    const connectedPlayers = room.players.filter((p) => p.connected);
+    let codingPaused = false;
+    if (room.turnMode === 'turn' && connectedPlayers.length >= 2) {
+      const activePlayer = connectedPlayers.find((p) => p.id === room.activeTurnPlayerId);
+      codingPaused = Boolean(activePlayer && activePlayer.inCodingView);
+    } else {
+      codingPaused = connectedPlayers.some((p) => p.inCodingView);
+    }
+    room.pausedByCoding = codingPaused;
+    const shouldPause = Boolean(room.pausedByTeacher || room.pausedByUser || room.pausedByCoding);
+    room.game.status = shouldPause ? 'paused' : 'playing';
+  }
+
+  setPlayerViewMode(code, playerId, mode) {
+    const room = this.getRoom(code);
+    if (!room) return { ok: false, error: '找不到房間' };
+    const player = room.players.find((p) => p.id === playerId);
+    if (!player) return { ok: false, error: '找不到玩家' };
+    if (room.phase !== 'playing') return { ok: false, error: '尚未進入戰鬥階段' };
+    if (room.game.status === 'victory' || room.game.status === 'defeat') {
+      return { ok: true, room, status: room.game.status };
+    }
+    player.inCodingView = mode === 'coding';
+    this.syncRoomPauseState(room);
+    return { ok: true, room, status: room.game.status, pausedByCoding: room.pausedByCoding };
+  }
+
+  togglePause(code, actorLabel = '玩家', isTeacherActor = false) {
     const room = this.getRoom(code);
     if (!room) return { ok: false, error: '找不到房間' };
     if (room.phase !== 'playing') return { ok: false, error: '房間尚未進入戰鬥' };
@@ -768,7 +813,12 @@ class RoomManager {
       return { ok: false, error: '遊戲已結束' };
     }
 
-    room.game.status = room.game.status === 'paused' ? 'playing' : 'paused';
+    if (isTeacherActor || actorLabel === '👩‍🏫 老師') {
+      room.pausedByTeacher = !room.pausedByTeacher;
+    } else {
+      room.pausedByUser = !room.pausedByUser;
+    }
+    this.syncRoomPauseState(room);
     this.logAction(room, actorLabel, room.game.status === 'paused' ? '暫停了戰場' : '繼續戰場');
     return { ok: true, room };
   }
@@ -831,6 +881,10 @@ class RoomManager {
     room.pendingDrafts = {};
     room.savedDrafts = {};
     room.lastAutoSave = null;
+    room.pausedByTeacher = false;
+    room.pausedByUser = false;
+    room.pausedByCoding = false;
+    room.players.forEach((p) => { p.inCodingView = false; });
     room.phase = room.players.length > 0 ? 'playing' : 'lobby';
     if (room.phase === 'playing') {
       room.game.status = 'playing';
@@ -1011,8 +1065,13 @@ class RoomManager {
         slotIndex: p.slotIndex,
         ownedTurrets: this.getOwnedTurretsForPlayer(room, p),
         ready: p.ready,
-        connected: p.connected
+        connected: p.connected,
+        inCodingView: Boolean(p.inCodingView)
       })),
+      pausedByTeacher: Boolean(room.pausedByTeacher),
+      pausedByUser: Boolean(room.pausedByUser),
+      pausedByCoding: Boolean(room.pausedByCoding),
+      codingPlayers: room.players.filter((p) => p.connected && p.inCodingView).map((p) => p.nickname),
       activeTurnPlayerId: room.activeTurnPlayerId,
       activeTurnNickname: activePlayer ? activePlayer.nickname : null,
       turnNumber: room.turnNumber,

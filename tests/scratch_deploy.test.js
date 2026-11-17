@@ -499,6 +499,24 @@ test('Scratch numeric edits survive 20Hz room:state ticks and persist on apply',
       '90',
       'Failed deploy must keep student edited number (90) instead of snapping back to 35'
     );
+
+    // 9. Test view switching to coding pauses game, drag-to-delete removes block, and switching back resumes
+    doc.getElementById('btn-mode-coding').click();
+    await waitMs(100);
+    assert.equal(doc.getElementById('view-game').classList.contains('mode-coding'), true);
+
+    assert.equal(blocksList.children.length, 2);
+    const firstBlock = blocksList.children[0];
+    const paletteEl = doc.getElementById('scratch-palette');
+    firstBlock.dispatchEvent('dragstart');
+    assert.equal(paletteEl.classList.contains('trash-active'), true, 'Dragging block activates palette trash highlight');
+    paletteEl.dispatchEvent('drop');
+    assert.equal(blocksList.children.length, 1, 'Dropping workspace block onto left palette must delete it');
+    assert.equal(paletteEl.classList.contains('trash-active'), false);
+
+    doc.getElementById('btn-mode-battle').click();
+    await waitMs(100);
+    assert.equal(doc.getElementById('view-game').classList.contains('mode-battle'), true);
   } finally {
     stopSimulationLoop();
     studentSocket.close();
@@ -802,6 +820,14 @@ test('Socket.IO student:heartbeat restores dropped player so end_turn and timer 
     // Now p1 can end_turn cleanly to p2!
     const endTurnAck = await p1Sock.emitAsync('student:end_turn', {});
     assert.equal(endTurnAck.ok, true);
+
+    // View mode switching over Socket.IO: coding pauses, battle resumes
+    const codingAck = await p2SockNew.emitAsync('student:set_view_mode', { mode: 'coding' });
+    assert.equal(codingAck.ok, true);
+    assert.equal(codingAck.status, 'paused');
+    const battleAck = await p2SockNew.emitAsync('student:set_view_mode', { mode: 'battle' });
+    assert.equal(battleAck.ok, true);
+    assert.equal(battleAck.status, 'playing');
   } finally {
     p1Sock.close();
     p2SockOld.close();

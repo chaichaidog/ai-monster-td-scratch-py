@@ -38,6 +38,10 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.ok(homeHtml.includes('btn-overlay-start-wave'));
     assert.ok(homeHtml.includes('btn-test-dummy'));
     assert.ok(homeHtml.includes('first-wave-prep-cta'));
+    assert.ok(homeHtml.includes('btn-mode-battle'));
+    assert.ok(homeHtml.includes('btn-mode-coding'));
+    assert.ok(homeHtml.includes('btn-apply-and-play'));
+    assert.ok(homeHtml.includes('scratch-trash-banner'));
     assert.ok(homeHtml.includes('feedback-form-box'));
     assert.ok(homeHtml.includes('btn-submit-feedback'));
     assert.ok(homeHtml.includes('turn-handoff-toast'));
