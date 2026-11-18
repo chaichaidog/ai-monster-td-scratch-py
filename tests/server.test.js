@@ -32,6 +32,7 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.ok(homeHtml.includes('data-grade="G9"'));
     assert.ok(homeHtml.includes('data-grade="TEACHER"'));
     assert.ok(homeHtml.includes('input-teacher-pin'));
+    assert.ok(!homeHtml.includes('1234'));
     assert.ok(homeHtml.includes('relic-modal'));
     assert.ok(homeHtml.includes('chest-quiz-modal'));
     assert.ok(homeHtml.includes('btn-start-wave-1'));
@@ -55,6 +56,7 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.equal(teacherPageRes.status, 200);
     const teacherHtml = await teacherPageRes.text();
     assert.ok(teacherHtml.includes('老師控制台'));
+    assert.ok(!teacherHtml.includes('1234'));
     assert.ok(teacherHtml.includes('btn-quick-setup-89'));
     assert.ok(teacherHtml.includes('btn-quick-setup-coop'));
     assert.ok(teacherHtml.includes('spec-btn-start-wave'));

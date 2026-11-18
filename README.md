@@ -39,7 +39,7 @@ npm install
 # 執行自動化測試
 npm test
 
-# 啟動伺服器（預設 Port 3000，教師預設密碼 1234）
+# 啟動伺服器（預設 Port 3000）
 npm start
 ```
 
@@ -71,6 +71,6 @@ git push -u origin main
    - **Start Command**: `npm start`
    - **Health Check Path**: `/health`
 4. 在 **Environment Variables** 新增：
-   - `TEACHER_PIN` = 你要設定的老師登入密碼（勿使用預設 `1234`）
+   - `TEACHER_PIN` = 你要設定的老師登入密碼
 5. 點擊 **Deploy Web Service**，完成後即可取得公開 HTTPS 網址發給學生使用！
 
