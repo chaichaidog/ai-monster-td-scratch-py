@@ -175,6 +175,8 @@
   const btnApplyAndPlay = document.getElementById('btn-apply-and-play');
   const btnTogglePy = document.getElementById('btn-toggle-py');
   const codePreview = document.getElementById('code-preview');
+  const codingLiveStats = document.getElementById('coding-live-stats');
+  const varResultSpans = new Map();
 
   let currentViewMode = 'battle';
   let mapPickReturnToCoding = false;
@@ -1809,6 +1811,7 @@
     if (!force && key === lastRenderedBlocksKey) return;
     lastRenderedBlocksKey = key;
 
+    varResultSpans.clear();
     scratchBlocksList.innerHTML = '';
 
     if (workspaceBlocks.length === 0) {
@@ -2157,6 +2160,10 @@
         row.appendChild(valInp);
         if (typeof document.createElement === 'function') {
           row.appendChild(makeStepBtn('＋', stepV));
+          const resultSpan = document.createElement('span');
+          resultSpan.className = 'sb-var-result';
+          varResultSpans.set(b.id, resultSpan);
+          row.appendChild(resultSpan);
         }
         row.appendChild(createBlockActionButtons(idx, b.id, canEdit));
         blockEl.appendChild(row);
@@ -2293,6 +2300,41 @@
     }
   }
 
+  function buildLivePreviewGameState(g, cfgOverride = null) {
+    if (!g) return g;
+    const turret = getSelectedTurret();
+    if (!turret || currentViewMode !== 'coding') return g;
+    const hasBlocks = workspaceBlocks.length > 0;
+    if (!dirtyDraft && !hasBlocks && !turret.active) return g;
+    const cfg = cfgOverride || (Transpiler
+      ? Transpiler.blocksToConfig(workspaceBlocks, g.functions, { x: turret.homeX, y: turret.homeY })
+      : null);
+    if (!cfg) return g;
+    return {
+      ...g,
+      turrets: g.turrets.map((t) => {
+        if (t.id !== turret.id) return t;
+        return {
+          ...t,
+          active: hasBlocks,
+          damage: cfg.damage,
+          fireRate: cfg.fireRate,
+          range: cfg.range,
+          weapon: cfg.weapon,
+          x: hasBlocks ? cfg.targetX : t.homeX,
+          y: hasBlocks ? cfg.targetY : t.homeY,
+          targetX: cfg.targetX,
+          targetY: cfg.targetY,
+          patrolAxis: cfg.patrolAxis,
+          patrolDist: cfg.patrolDist,
+          overchargeDmg: cfg.overchargeDmg || 0,
+          overchargeRate: cfg.overchargeRate || 0,
+          overchargeRange: cfg.overchargeRange || 0
+        };
+      })
+    };
+  }
+
   function updateScratchPreview() {
     if (!roomState || !roomState.game || !Transpiler) return;
     const g = roomState.game;
@@ -2309,10 +2351,66 @@
       .filter((t) => t.id !== turret.id)
       .reduce((sum, t) => sum + t.cost, 0);
     const totalProjected = otherCost + cost;
-    const dps = (cfg.damage * cfg.fireRate).toFixed(1);
+    const effectiveRatePreview = Math.round(
+      cfg.fireRate * (1 + Math.min(0.35, (cfg.overchargeRate || 0) * 0.12)) * 100
+    ) / 100;
+    const dps = (cfg.damage * effectiveRatePreview).toFixed(1);
     const wInfo = meta && meta.weapons && meta.weapons[cfg.weapon] ? meta.weapons[cfg.weapon].short : cfg.weapon;
 
     editorCostPill.textContent = `算力預估: ${cost}`;
+
+    // Update live per-block evaluated readout next to each set_var block without rebuilding inputs
+    const traceMap = cfg.varTrace || {};
+    varResultSpans.forEach((span, blockId) => {
+      const tr = traceMap[blockId];
+      if (!tr) {
+        span.className = 'sb-var-result';
+        span.textContent = '';
+        return;
+      }
+      if (tr.overwritten) {
+        span.className = 'sb-var-result is-overwritten';
+        span.textContent = '⚠️ 被下方設為蓋掉';
+      } else if (tr.op === 'add') {
+        span.className = tr.delta > 0 ? 'sb-var-result is-overcharge' : 'sb-var-result';
+        if (tr.varName === 'damage' && tr.delta > 0) {
+          const stackHit = Math.max(1, Math.round(tr.delta * 0.45));
+          span.textContent = `→ ${tr.after}（連打+${stackHit}）`;
+        } else if (tr.varName === 'fire_rate' && tr.delta > 0) {
+          const pct = Math.min(35, Math.round(tr.delta * 12));
+          span.textContent = `→ ${tr.after}/s（+${pct}%超頻）`;
+        } else if (tr.varName === 'attack_range' && tr.delta > 0) {
+          const pct = Math.min(25, Math.round(tr.delta * 0.8));
+          span.textContent = `→ ${tr.after}（遠射+${pct}%）`;
+        } else {
+          span.textContent = `→ 變為 ${tr.after}`;
+        }
+      } else {
+        span.className = 'sb-var-result';
+        span.textContent = tr.clamped ? `→ 上限 ${tr.after}` : `→ 目前 ${tr.after}`;
+      }
+    });
+
+    if (codingLiveStats) {
+      const statParts = [
+        `<span class="cls-pill">💥 威力 ${cfg.damage}</span>`,
+        `<span class="cls-pill">⚡ 攻速 ${effectiveRatePreview}/s</span>`,
+        `<span class="cls-pill">🎯 射程 ${cfg.range}</span>`
+      ];
+      if ((cfg.overchargeDmg || 0) > 0) {
+        const stackHit = Math.max(1, Math.round(cfg.overchargeDmg * 0.45));
+        statParts.push(`<span class="cls-pill cls-buff">🔥 +=連打疊傷 +${stackHit}/發</span>`);
+      }
+      if ((cfg.overchargeRate || 0) > 0) {
+        const pct = Math.min(35, Math.round(cfg.overchargeRate * 12));
+        statParts.push(`<span class="cls-pill cls-buff">⚡ +=超頻 +${pct}%</span>`);
+      }
+      if ((cfg.overchargeRange || 0) > 0) {
+        const pct = Math.min(25, Math.round(cfg.overchargeRange * 0.8));
+        statParts.push(`<span class="cls-pill cls-buff">🎯 +=遠射增傷 +${pct}%</span>`);
+      }
+      codingLiveStats.innerHTML = statParts.join('');
+    }
 
     if (deployErrorMsg) {
       scratchDiagnostic.className = 'py-diagnostic err';
@@ -2369,6 +2467,9 @@
     if (nextHtml !== lastPreviewHtml) {
       lastPreviewHtml = nextHtml;
       codePreview.innerHTML = nextHtml;
+    }
+    if (codingRenderer && currentViewMode === 'coding') {
+      codingRenderer.pushGameState(buildLivePreviewGameState(g, cfg));
     }
   }
 
@@ -3073,7 +3174,7 @@
       if (typeof codingRenderer.setOwnedTurrets === 'function') {
         codingRenderer.setOwnedTurrets(room.turnMode === 'sync' && multiConnected ? owned : null);
       }
-      codingRenderer.pushGameState(g);
+      codingRenderer.pushGameState(buildLivePreviewGameState(g));
     }
 
     if (lastSeenWave !== null && g.wave !== lastSeenWave) {

@@ -279,9 +279,31 @@ test('Scratch blocks transpiler: move, patrol, weapon, set/add variables, highli
   assert.equal(cfg.patrolDist, 45);
   assert.equal(cfg.weapon, 'chain');
   assert.equal(cfg.damage, 40);
+  assert.equal(cfg.overchargeDmg, 15);
+  assert.equal(cfg.varTrace.b_v1.after, 25);
+  assert.equal(cfg.varTrace.b_v1.overwritten, false);
+  assert.equal(cfg.varTrace.b_v2.after, 40);
   assert.equal(cfg.conditionType, 'has_shield');
   assert.equal(cfg.loopMode, 'burst');
   assert.equal(cfg.loopCount, 2);
+
+  // Overwriting an earlier += variable block marks it overwritten and clears overcharge
+  const owCfg = Scratch.blocksToConfig([
+    { id: 'ow_add', type: 'set_var', varName: 'damage', op: 'add', value: 15 },
+    { id: 'ow_set', type: 'set_var', varName: 'damage', op: 'set', value: 30 }
+  ]);
+  assert.equal(owCfg.damage, 30);
+  assert.equal(owCfg.overchargeDmg, 0);
+  assert.equal(owCfg.varTrace.ow_add.overwritten, true);
+  assert.equal(owCfg.varTrace.ow_set.overwritten, false);
+
+  // += placed before call_fn still stacks onto the called function's baseline when argDmg is null
+  const fnStackCfg = Scratch.blocksToConfig([
+    { id: 'pre_add', type: 'set_var', varName: 'damage', op: 'add', value: 12 },
+    { id: 'cf1', type: 'call_fn', fnId: 'fn_custom', argDmg: null, argRate: null }
+  ], [{ id: 'fn_custom', name: 'mod_a', damage: 24, fireRate: 1.5, range: 170, weapon: 'frost' }]);
+  assert.equal(fnStackCfg.damage, 36);
+  assert.equal(fnStackCfg.overchargeDmg, 12);
 
   const plainPy = Scratch.blocksToPlainPython(blocks, [], 'T1');
   assert.match(plainPy, /turret\.move_to\(390, 165\)/);
@@ -1196,6 +1218,77 @@ test('Wave intel, timed coding prep, and code locking until next wave work end-t
     active: true
   });
   assert.ok(megaCost > gs.computeBudget, `Expected mega-turret stacking (${megaCost}) > Wave 1 budget (${gs.computeBudget})`);
+});
+
+test('+= variable blocks provide real cumulative burst ramp, fire-rate haste, and far-snipe bonus', () => {
+  const Engine = require('../game/engine');
+
+  const runTurretCompare = (blocks) => {
+    const gs = Engine.createGameState({ grade: 'G7' });
+    gs.computeBudget = 400;
+    const upd = Engine.updateTurretFromBlocks(gs, 'T1', blocks);
+    assert.equal(upd.ok, true);
+    const t = upd.turret;
+    gs.monsters = [{
+      id: 777,
+      type: 'tank',
+      name: '測試靶怪',
+      tag: '高血',
+      x: t.x + 150,
+      y: t.y,
+      distance: 100,
+      progress: 0.2,
+      hp: 600,
+      maxHp: 600,
+      shield: 0,
+      maxShield: 0,
+      speed: 0,
+      armor: 0,
+      baseDamage: 1,
+      rewardCoins: 5,
+      rewardScore: 10,
+      stealth: false,
+      revealTimer: 0,
+      hitFlash: 0,
+      poisonTimer: 0,
+      poisonDps: 0,
+      regenPerSec: 0,
+      slowTimer: 0,
+      slowFactor: 1,
+      burnTimer: 0
+    }];
+    gs.spawnQueue = [];
+    for (let i = 0; i < 15; i++) {
+      Engine.advanceGameTick(gs, 0.05);
+    }
+    return 600 - gs.monsters[0].hp;
+  };
+
+  // Same final damage=45, same burst=3: += variant deals strictly more burst ramp damage than plain =
+  const staticDmg = runTurretCompare([
+    { id: 'sv1', type: 'set_var', varName: 'damage', op: 'set', value: 45 },
+    { id: 'lp1', type: 'loop', loopMode: 'burst', count: 3 }
+  ]);
+  const addDmg = runTurretCompare([
+    { id: 'av1', type: 'set_var', varName: 'damage', op: 'set', value: 25 },
+    { id: 'av2', type: 'set_var', varName: 'damage', op: 'add', value: 20 },
+    { id: 'lp2', type: 'loop', loopMode: 'burst', count: 3 }
+  ]);
+  assert.ok(addDmg > staticDmg, `Expected += burst damage (${addDmg}) > static = damage (${staticDmg})`);
+
+  // fire_rate += and attack_range += also record positive overcharge stats
+  const gs2 = Engine.createGameState({ grade: 'G7' });
+  gs2.computeBudget = 400;
+  const r2 = Engine.updateTurretFromBlocks(gs2, 'T1', [
+    { id: 'rf1', type: 'set_var', varName: 'fire_rate', op: 'set', value: 1.5 },
+    { id: 'rf2', type: 'set_var', varName: 'fire_rate', op: 'add', value: 0.5 },
+    { id: 'rr1', type: 'set_var', varName: 'attack_range', op: 'add', value: 20 }
+  ]);
+  assert.equal(r2.ok, true);
+  assert.equal(r2.turret.fireRate, 2.0);
+  assert.equal(r2.turret.overchargeRate, 0.5);
+  assert.equal(r2.turret.range, 190);
+  assert.equal(r2.turret.overchargeRange, 20);
 });
 
 

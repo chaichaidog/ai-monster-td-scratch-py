@@ -2308,3 +2308,55 @@ input[type="range"] {
   background: #ffffff;
 }
 
+.sb-var-result {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.92);
+  color: #9a3412;
+  border: 1px solid rgba(154, 52, 18, 0.25);
+  white-space: nowrap;
+}
+
+.sb-var-result.is-overcharge {
+  background: #fef3c7;
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.45);
+}
+
+.sb-var-result.is-overwritten {
+  background: #fee2e2;
+  color: #b91c1c;
+  border-color: rgba(220, 38, 38, 0.45);
+}
+
+.coding-live-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.cls-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid rgba(2, 132, 199, 0.22);
+}
+
+.cls-pill.cls-buff {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.38);
+}
+
+

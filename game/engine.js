@@ -193,6 +193,11 @@ function createInitialTurrets(mapId = 'classic_s') {
       burstTargetId: null,
       burstBonus: null,
       loopStep: 0,
+      overchargeDmg: 0,
+      overchargeRate: 0,
+      overchargeRange: 0,
+      rampTargetId: null,
+      rampStacks: 0,
       lastTargetId: null,
       lastConditionActive: false,
       boundFunctionId: null,
@@ -1512,10 +1517,19 @@ function advanceGameTick(state, dt) {
     }
 
     const zoneBuffs = getTurretZoneBuffs(state, turret);
-    const effectiveFireRate = turret.fireRate * zoneBuffs.fireRateMult;
+    const rateRampMult = 1 + Math.min(0.35, (turret.overchargeRate || 0) * 0.12);
+    const effectiveFireRate = turret.fireRate * zoneBuffs.fireRateMult * rateRampMult;
     const effectiveRange = turret.range + zoneBuffs.rangeBonus;
     turret.inHazard = zoneBuffs.inHazard;
     turret.zoneBuffLabel = zoneBuffs.zoneLabel;
+
+    const applyRangeOvercharge = (dmg, targetMonster) => {
+      if ((turret.overchargeRange || 0) <= 0 || !targetMonster) return dmg;
+      const d = Math.hypot(targetMonster.x - turret.x, targetMonster.y - turret.y);
+      if (d < effectiveRange * 0.6) return dmg;
+      const bonusMult = 1 + Math.min(0.25, turret.overchargeRange * 0.008);
+      return Math.round(dmg * bonusMult);
+    };
 
     if (turret.burstRemaining > 0) {
       turret.burstTimer -= dt;
@@ -1526,10 +1540,14 @@ function advanceGameTick(state, dt) {
           target = fallback[0] ? fallback[0].monster : null;
         }
         if (target) {
+          const stepNum = (turret.loopStep || 1) + 1;
           const scale = LOOP_MODES.burst.perHitScale[turret.loopCount] || 0.5;
-          const shotDmg = Math.max(4, Math.round(turret.damage * scale));
+          const rampBonus = (turret.overchargeDmg || 0) > 0
+            ? Math.round(turret.overchargeDmg * 0.45 * (stepNum - 1))
+            : 0;
+          const shotDmg = applyRangeOvercharge(Math.max(4, Math.round(turret.damage * scale) + rampBonus), target);
           const mods = turret.burstMods || computeShotModifiers(turret, null);
-          turret.loopStep = turret.loopCount - turret.burstRemaining + 1;
+          turret.loopStep = stepNum;
           spawnProjectile(state, turret, target, shotDmg, mods, true, false, turret.burstCondMatched);
         }
         turret.burstRemaining -= 1;
@@ -1548,13 +1566,16 @@ function advanceGameTick(state, dt) {
       const picks = selectTargetsForTurret(turret, state.monsters, effCount, effectiveRange);
       if (picks.length > 0) {
         const scale = LOOP_MODES.multi.perHitScale[turret.loopCount] || 0.65;
-        const shotDmg = Math.max(4, Math.round(turret.damage * scale));
         let fastestCdMult = 1.0;
 
         picks.forEach((pick, index) => {
           const mods = computeShotModifiers(turret, pick.evalRes);
           fastestCdMult = Math.max(fastestCdMult, mods.cooldownSpeedMult);
           turret.loopStep = index + 1;
+          const rampBonus = (turret.overchargeDmg || 0) > 0
+            ? Math.round(turret.overchargeDmg * 0.25 * index)
+            : 0;
+          const shotDmg = applyRangeOvercharge(Math.max(4, Math.round(turret.damage * scale) + rampBonus), pick.monster);
           spawnProjectile(state, turret, pick.monster, shotDmg, mods, false, true, pick.evalRes.matched);
         });
 
@@ -1565,6 +1586,8 @@ function advanceGameTick(state, dt) {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
         turret.loopStep = 0;
+        turret.rampTargetId = null;
+        turret.rampStacks = 0;
       }
     } else if (turret.loopMode === 'burst' && turret.loopCount > 1) {
       const effCount = turret.loopCount + (hasRelic(state, 'loop_plus') ? 1 : 0);
@@ -1573,7 +1596,7 @@ function advanceGameTick(state, dt) {
         const pick = picks[0];
         const mods = computeShotModifiers(turret, pick.evalRes);
         const scale = LOOP_MODES.burst.perHitScale[turret.loopCount] || 0.5;
-        const shotDmg = Math.max(4, Math.round(turret.damage * scale));
+        const shotDmg = applyRangeOvercharge(Math.max(4, Math.round(turret.damage * scale)), pick.monster);
 
         turret.loopStep = 1;
         spawnProjectile(state, turret, pick.monster, shotDmg, mods, true, false, pick.evalRes.matched);
@@ -1591,12 +1614,16 @@ function advanceGameTick(state, dt) {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
         turret.loopStep = 0;
+        turret.rampTargetId = null;
+        turret.rampStacks = 0;
       }
     } else {
       if (turret.ammoRemaining === 0) {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
         turret.loopStep = 0;
+        turret.rampTargetId = null;
+        turret.rampStacks = 0;
         continue;
       }
       const picks = selectTargetsForTurret(turret, state.monsters, 1, effectiveRange);
@@ -1604,7 +1631,15 @@ function advanceGameTick(state, dt) {
         const pick = picks[0];
         const mods = computeShotModifiers(turret, pick.evalRes);
         turret.loopStep = 0;
-        spawnProjectile(state, turret, pick.monster, turret.damage, mods, false, false, pick.evalRes.matched);
+        turret.rampStacks = turret.rampTargetId === pick.monster.id
+          ? Math.min(4, (turret.rampStacks || 0) + 1)
+          : 1;
+        turret.rampTargetId = pick.monster.id;
+        const rampBonus = (turret.overchargeDmg || 0) > 0
+          ? Math.round(turret.overchargeDmg * 0.25 * (turret.rampStacks - 1))
+          : 0;
+        const shotDmg = applyRangeOvercharge(turret.damage + rampBonus, pick.monster);
+        spawnProjectile(state, turret, pick.monster, shotDmg, mods, false, false, pick.evalRes.matched);
         if (turret.ammoRemaining > 0) {
           turret.ammoRemaining -= 1;
         }
@@ -1613,6 +1648,8 @@ function advanceGameTick(state, dt) {
         turret.lastTargetId = null;
         turret.lastConditionActive = false;
         turret.loopStep = 0;
+        turret.rampTargetId = null;
+        turret.rampStacks = 0;
       }
     }
   }
@@ -1799,6 +1836,11 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
     turret.boundFunctionName = null;
     turret.loopMode = 'none';
     turret.loopCount = 1;
+    turret.overchargeDmg = 0;
+    turret.overchargeRate = 0;
+    turret.overchargeRange = 0;
+    turret.rampTargetId = null;
+    turret.rampStacks = 0;
     turret.cost = 0;
     turret.code = ScratchTranspiler.blocksToPlainPython([], state.functions, turret.name);
     state.computeUsed = otherCost;
@@ -1859,6 +1901,11 @@ function updateTurretFromBlocks(state, turretId, rawBlocks) {
   turret.code = ScratchTranspiler.blocksToPlainPython(transpiled.blocks, state.functions, turret.name);
   turret.boundFunctionId = transpiled.boundFunctionId || null;
   turret.boundFunctionName = transpiled.boundFunctionName || null;
+  turret.overchargeDmg = transpiled.overchargeDmg || 0;
+  turret.overchargeRate = transpiled.overchargeRate || 0;
+  turret.overchargeRange = transpiled.overchargeRange || 0;
+  turret.rampTargetId = null;
+  turret.rampStacks = 0;
   turret.cost = newCost;
   state.computeUsed = otherCost + newCost;
   state.stats.editsCount += 1;
@@ -2291,6 +2338,9 @@ function serializeGameState(state) {
       loopMode: t.loopMode,
       loopCount: t.loopCount,
       loopStep: t.loopStep,
+      overchargeDmg: t.overchargeDmg || 0,
+      overchargeRate: t.overchargeRate || 0,
+      overchargeRange: t.overchargeRange || 0,
       cost: t.cost,
       blocks: t.blocks,
       code: t.code,

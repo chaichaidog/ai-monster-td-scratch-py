@@ -158,7 +158,21 @@
       usedCond: false,
       usedLoop: false,
       usedFn: false,
+      overchargeDmg: 0,
+      overchargeRate: 0,
+      overchargeRange: 0,
+      varTrace: {},
       blocks
+    };
+
+    const varLastIds = { damage: [], fire_rate: [], attack_range: [] };
+    const preCallAdd = { damage: 0, fire_rate: 0, attack_range: 0 };
+
+    const markVarOverwritten = (varName) => {
+      const ids = varLastIds[varName] || [];
+      ids.forEach((id) => {
+        if (cfg.varTrace[id]) cfg.varTrace[id].overwritten = true;
+      });
     };
 
     for (const b of blocks) {
@@ -176,11 +190,80 @@
       } else if (b.type === 'set_var') {
         cfg.usedVars = true;
         if (b.varName === 'damage') {
-          cfg.damage = b.op === 'add' ? cfg.damage + b.value : b.value;
+          const before = cfg.damage;
+          if (b.op === 'add') {
+            cfg.damage = before + b.value;
+            if (b.value > 0) {
+              cfg.overchargeDmg += b.value;
+              preCallAdd.damage += b.value;
+            }
+          } else {
+            markVarOverwritten('damage');
+            cfg.damage = b.value;
+            cfg.overchargeDmg = 0;
+            preCallAdd.damage = 0;
+          }
+          const after = Math.round(clamp(cfg.damage, 10, 90));
+          cfg.varTrace[b.id] = {
+            varName: 'damage',
+            op: b.op,
+            before: Math.round(before),
+            delta: b.value,
+            after,
+            clamped: after !== cfg.damage,
+            overwritten: false
+          };
+          varLastIds.damage.push(b.id);
         } else if (b.varName === 'fire_rate') {
-          cfg.fireRate = b.op === 'add' ? cfg.fireRate + b.value : b.value;
+          const before = Math.round(cfg.fireRate * 100) / 100;
+          if (b.op === 'add') {
+            cfg.fireRate = before + b.value;
+            if (b.value > 0) {
+              cfg.overchargeRate = Math.round((cfg.overchargeRate + b.value) * 100) / 100;
+              preCallAdd.fire_rate = Math.round((preCallAdd.fire_rate + b.value) * 100) / 100;
+            }
+          } else {
+            markVarOverwritten('fire_rate');
+            cfg.fireRate = b.value;
+            cfg.overchargeRate = 0;
+            preCallAdd.fire_rate = 0;
+          }
+          const after = Math.round(clamp(cfg.fireRate, 0.5, 4.0) * 100) / 100;
+          cfg.varTrace[b.id] = {
+            varName: 'fire_rate',
+            op: b.op,
+            before,
+            delta: b.value,
+            after,
+            clamped: Math.abs(after - cfg.fireRate) > 0.001,
+            overwritten: false
+          };
+          varLastIds.fire_rate.push(b.id);
         } else if (b.varName === 'attack_range') {
-          cfg.range = b.op === 'add' ? cfg.range + b.value : b.value;
+          const before = cfg.range;
+          if (b.op === 'add') {
+            cfg.range = before + b.value;
+            if (b.value > 0) {
+              cfg.overchargeRange += b.value;
+              preCallAdd.attack_range += b.value;
+            }
+          } else {
+            markVarOverwritten('attack_range');
+            cfg.range = b.value;
+            cfg.overchargeRange = 0;
+            preCallAdd.attack_range = 0;
+          }
+          const after = Math.round(clamp(cfg.range, 120, 260));
+          cfg.varTrace[b.id] = {
+            varName: 'attack_range',
+            op: b.op,
+            before: Math.round(before),
+            delta: b.value,
+            after,
+            clamped: after !== cfg.range,
+            overwritten: false
+          };
+          varLastIds.attack_range.push(b.id);
         }
       } else if (b.type === 'if_else') {
         cfg.usedCond = true;
@@ -207,9 +290,23 @@
           cfg.usedFn = true;
           cfg.boundFunctionId = fn.id;
           cfg.boundFunctionName = fn.name;
-          cfg.damage = Number.isFinite(b.argDmg) && b.argDmg !== null ? b.argDmg : fn.damage;
-          cfg.fireRate = Number.isFinite(b.argRate) && b.argRate !== null ? b.argRate : fn.fireRate;
-          cfg.range = fn.range || cfg.range;
+          if (Number.isFinite(b.argDmg) && b.argDmg !== null) {
+            markVarOverwritten('damage');
+            cfg.damage = b.argDmg;
+            cfg.overchargeDmg = 0;
+            preCallAdd.damage = 0;
+          } else {
+            cfg.damage = fn.damage + preCallAdd.damage;
+          }
+          if (Number.isFinite(b.argRate) && b.argRate !== null) {
+            markVarOverwritten('fire_rate');
+            cfg.fireRate = b.argRate;
+            cfg.overchargeRate = 0;
+            preCallAdd.fire_rate = 0;
+          } else {
+            cfg.fireRate = fn.fireRate + preCallAdd.fire_rate;
+          }
+          cfg.range = (fn.range || cfg.range) + preCallAdd.attack_range;
           cfg.weapon = fn.weapon || cfg.weapon;
           cfg.conditionType = fn.conditionType || 'none';
           cfg.secondaryLogic = fn.secondaryLogic || 'none';
@@ -398,14 +495,17 @@
       } else if (b.type === 'set_var') {
         const opSym = b.op === 'add' ? '+=' : '=';
         const vInfo = VAR_INFO[b.varName] || { name: b.varName, icon: '📦', unit: '' };
+        const addEffect = b.varName === 'damage'
+          ? '並啟動「連射疊傷」'
+          : (b.varName === 'fire_rate' ? '並啟動「超頻加速」' : '並啟動「遠距狙擊增傷」');
         const inlineTr = b.op === 'add'
-          ? `${vInfo.icon} 把${vInfo.name}「再加 ${b.value}${vInfo.unit}」`
+          ? `${vInfo.icon} 把${vInfo.name}「再加 ${b.value}${vInfo.unit}」${b.value > 0 ? addEffect : ''}`
           : `${vInfo.icon} 把${vInfo.name}設成 ${b.value}${vInfo.unit}`;
         const hint = b.op === 'add'
-          ? `+= 的意思：把原本的${vInfo.name}再加上 ${b.value}${vInfo.unit}！`
+          ? `+= 除了將原本${vInfo.name}再加 ${b.value}${vInfo.unit}，還能觸發實戰加乘！`
           : `= 的意思：把「${vInfo.name}」盒子改成放進 ${b.value}${vInfo.unit}`;
         const tip = b.op === 'add'
-          ? '+= 在 Python 代表「在原本的值上面再累加」'
+          ? '+= 在 Python 代表「在原本的值上面再累加」，在本關還能疊加連發傷害/超頻/遠射！'
           : '= 在程式裡不是相等，而是「把右邊數值存進左邊變數」';
         htmlLines.push(wrap(
           b.id,
