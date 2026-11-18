@@ -328,14 +328,14 @@
 
   function calcDraftCost(cfg, hasBlocks = true) {
     if (!meta || !hasBlocks) return 0;
-    const dpsPart = cfg.damage * cfg.fireRate * 0.72;
-    const rangePart = Math.max(0, cfg.range - 120) * 0.12;
+    const dpsPart = cfg.damage * cfg.fireRate * 0.78;
+    const rangePart = Math.max(0, cfg.range - 130) * 0.22 + Math.max(0, cfg.range - 185) * 0.35;
     const weaponPart = meta.weapons && meta.weapons[cfg.weapon] ? meta.weapons[cfg.weapon].cost : 0;
     let loopPart = 0;
-    if (cfg.loopMode === 'burst' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 4;
-    if (cfg.loopMode === 'multi' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 5;
-    const overDmgTax = Math.max(0, cfg.damage - 50) * 1.2;
-    const overRateTax = Math.max(0, cfg.fireRate - 2.2) * 14;
+    if (cfg.loopMode === 'burst' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 5;
+    if (cfg.loopMode === 'multi' && cfg.loopCount > 1) loopPart = (cfg.loopCount - 1) * 6;
+    const overDmgTax = Math.max(0, cfg.damage - 38) * 1.4;
+    const overRateTax = Math.max(0, cfg.fireRate - 1.8) * 18;
     const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
     const hasFnMaster = roomState && roomState.game && Array.isArray(roomState.game.relics)
       && roomState.game.relics.includes('fn_master');

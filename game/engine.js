@@ -133,17 +133,17 @@ function sanitizeTurretConfig(raw = {}, base = {}) {
 
 function calcTurretCost(cfg, relics = []) {
   if (cfg && cfg.active === false) return 0;
-  const dpsPart = cfg.damage * cfg.fireRate * 0.72;
-  const rangePart = Math.max(0, cfg.range - 120) * 0.12;
+  const dpsPart = cfg.damage * cfg.fireRate * 0.78;
+  const rangePart = Math.max(0, cfg.range - 130) * 0.22 + Math.max(0, cfg.range - 185) * 0.35;
   const weaponPart = WEAPONS[cfg.weapon] ? WEAPONS[cfg.weapon].cost : 0;
   let loopPart = 0;
   if (cfg.loopMode === 'burst' && cfg.loopCount > 1) {
-    loopPart = (cfg.loopCount - 1) * 4;
-  } else if (cfg.loopMode === 'multi' && cfg.loopCount > 1) {
     loopPart = (cfg.loopCount - 1) * 5;
+  } else if (cfg.loopMode === 'multi' && cfg.loopCount > 1) {
+    loopPart = (cfg.loopCount - 1) * 6;
   }
-  const overDmgTax = Math.max(0, cfg.damage - 50) * 1.2;
-  const overRateTax = Math.max(0, cfg.fireRate - 2.2) * 14;
+  const overDmgTax = Math.max(0, cfg.damage - 38) * 1.4;
+  const overRateTax = Math.max(0, cfg.fireRate - 1.8) * 18;
   const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
   const hasFnMaster = Array.isArray(relics) && relics.includes('fn_master');
   const fnDiscount = cfg && cfg.boundFunctionId ? (hasFnMaster ? 0.7 : 0.85) : 1.0;
@@ -981,7 +981,7 @@ function pushEvent(state, event) {
 
 function computeShotModifiers(turret, evalRes) {
   let hpDmgMult = 1.0;
-  let shieldDmgMult = 1.0;
+  let shieldDmgMult = turret && turret.weapon === 'laser' ? 1.8 : 1.0;
   let slowDuration = 0;
   let cooldownSpeedMult = 1.0;
 
@@ -1064,7 +1064,9 @@ function dealDirectDamage(state, monster, rawDmg, hpMult, shieldMult, armorIgnor
   let totalDealt = 0;
 
   if (monster.shield > 0) {
-    const effectiveShieldDmg = Math.round(dmgLeft * shieldMult);
+    // Non-counter physical/raw shots bounce partially off purple shields (use Laser or <有護盾>)
+    const shieldEfficiency = shieldMult > 1.05 ? shieldMult : 0.55;
+    const effectiveShieldDmg = Math.round(dmgLeft * shieldEfficiency);
     const absorbed = Math.min(monster.shield, effectiveShieldDmg);
     monster.shield -= absorbed;
     totalDealt += absorbed;
@@ -1076,7 +1078,9 @@ function dealDirectDamage(state, monster, rawDmg, hpMult, shieldMult, armorIgnor
   if (dmgLeft > 0 && monster.hp > 0) {
     const rawHpDmg = Math.round(dmgLeft * hpMult);
     const armor = armorIgnore ? 0 : (monster.armor || 0);
-    const afterArmor = Math.max(2, rawHpDmg - armor);
+    const armorPctResist = armor >= 3 ? Math.min(0.6, armor * 0.08) : 0;
+    const afterPct = Math.round(rawHpDmg * (1 - armorPctResist));
+    const afterArmor = Math.max(2, afterPct - armor);
     const dealt = Math.min(monster.hp, afterArmor);
     monster.hp -= dealt;
     totalDealt += dealt;
@@ -1177,7 +1181,7 @@ function applyDamageToMonster(state, monster, proj) {
     proj.damage,
     proj.hpDmgMult,
     proj.shieldDmgMult,
-    proj.weapon === 'plasma'
+    Boolean(proj.weapon === 'plasma' || proj.condMatched)
   );
   let totalDealt = baseDealt;
 
@@ -1684,8 +1688,8 @@ function advanceGameTick(state, dt) {
     state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier, state.mapId);
     state.waveIntel = summarizeWaveIntel(state.spawnQueue);
     state.computeBudget += gradeCfg.budgetPerWave;
-    state.coins += 12;
-    state.baseHp = Math.min(state.baseMaxHp, state.baseHp + 8);
+    state.coins += 10;
+    state.baseHp = Math.min(state.baseMaxHp, state.baseHp + 4);
     state.score += 60;
 
     maybeTriggerRelicChoice(state, nextWaveNum);

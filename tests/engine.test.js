@@ -518,10 +518,10 @@ test('T1-T4 start empty, no-loop turrets stop after 3 trial shots, and fn discou
   const Engine = require('../game/engine');
   const gs = Engine.createGameState({ grade: 'G7', maxWaves: 8 });
 
-  // 1. All 4 turrets start empty & inactive with 0 compute used and welcoming starter coins/budget
-  assert.equal(gs.coins, 25);
+  // 1. All 4 turrets start empty & inactive with 0 compute used and balanced starter coins/budget
+  assert.equal(gs.coins, 15);
   assert.equal(gs.computeUsed, 0);
-  assert.equal(gs.computeBudget, 150);
+  assert.equal(gs.computeBudget, 115);
   for (const t of gs.turrets) {
     assert.equal(t.blocks.length, 0);
     assert.equal(t.active, false);
@@ -988,7 +988,7 @@ test('First-wave prep button, test dummy sandbox, shatter elemental combo, and t
   for (let i = 0; i < 40; i++) Engine.advanceGameTick(gs, 0.05);
   assert.equal(gs.waveDelay, 15.0, 'Wave 1 countdown must stay paused until Start');
   assert.equal(gs.timeRemaining, 600, '20-min timer must stay paused until Start');
-  assert.equal(gs.baseHp, 120);
+  assert.equal(gs.baseHp, 100);
 
   // Press Start Wave 1 Countdown -> clears dummies, restores trial ammo, begins countdown -> spawns monsters
   const startRes = Engine.startFirstWaveCountdown(gs);
@@ -1182,6 +1182,20 @@ test('Wave intel, timed coding prep, and code locking until next wave work end-t
   assert.equal(room.wavePhase, 'combat');
   assert.equal(room.codeLocked, true);
   assert.equal(rm.handleUpdateTurret('199', p.id, 'T2', { damage: 20 }).ok, false);
+
+  // Brute-force extreme mega-range/damage stacking exceeds early budget so students use multi-tower/counters
+  const Engine = require('../game/engine');
+  const gs = Engine.createGameState({ grade: 'G7' });
+  const megaCost = Engine.calcTurretCost({
+    damage: 85,
+    fireRate: 2.5,
+    range: 240,
+    weapon: 'laser',
+    loopMode: 'burst',
+    loopCount: 3,
+    active: true
+  });
+  assert.ok(megaCost > gs.computeBudget, `Expected mega-turret stacking (${megaCost}) > Wave 1 budget (${gs.computeBudget})`);
 });
 
 

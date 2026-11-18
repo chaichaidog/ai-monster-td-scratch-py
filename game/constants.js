@@ -105,48 +105,48 @@ const GRADES = {
     label: '國一 (七年級)',
     shortLabel: '國一',
     allowedStudentGrades: ['G7'],
-    hpMultiplier: 0.72,
-    speedMultiplier: 0.84,
-    startingBudget: 150,
-    budgetPerWave: 25,
-    startingCoins: 25,
-    baseMaxHp: 120
+    hpMultiplier: 0.9,
+    speedMultiplier: 0.92,
+    startingBudget: 115,
+    budgetPerWave: 18,
+    startingCoins: 15,
+    baseMaxHp: 100
   },
   G8: {
     id: 'G8',
     label: '國二 (八年級)',
     shortLabel: '國二',
     allowedStudentGrades: ['G8'],
-    hpMultiplier: 0.82,
-    speedMultiplier: 0.88,
-    startingBudget: 125,
-    budgetPerWave: 22,
-    startingCoins: 20,
-    baseMaxHp: 120
+    hpMultiplier: 1.02,
+    speedMultiplier: 0.96,
+    startingBudget: 105,
+    budgetPerWave: 16,
+    startingCoins: 15,
+    baseMaxHp: 100
   },
   G9: {
     id: 'G9',
     label: '國三 (九年級)',
     shortLabel: '國三',
     allowedStudentGrades: ['G9'],
-    hpMultiplier: 0.9,
-    speedMultiplier: 0.9,
-    startingBudget: 120,
-    budgetPerWave: 20,
-    startingCoins: 20,
-    baseMaxHp: 120
+    hpMultiplier: 1.12,
+    speedMultiplier: 1.0,
+    startingBudget: 100,
+    budgetPerWave: 16,
+    startingCoins: 15,
+    baseMaxHp: 100
   },
   G89: {
     id: 'G89',
     label: '國二＆國三共玩 (8-9年級聯防)',
     shortLabel: '8-9年級',
     allowedStudentGrades: ['G8', 'G9'],
-    hpMultiplier: 0.85,
-    speedMultiplier: 0.89,
-    startingBudget: 125,
-    budgetPerWave: 22,
-    startingCoins: 20,
-    baseMaxHp: 120
+    hpMultiplier: 1.06,
+    speedMultiplier: 0.98,
+    startingBudget: 105,
+    budgetPerWave: 16,
+    startingCoins: 15,
+    baseMaxHp: 100
   }
 };
 
@@ -216,11 +216,11 @@ const MONSTER_TYPES = {
   tank: {
     type: 'tank',
     name: '鐵甲巨像',
-    hp: 150,
+    hp: 175,
     shield: 0,
-    speed: 40,
-    armor: 3,
-    baseDamage: 12,
+    speed: 42,
+    armor: 5,
+    baseDamage: 14,
     score: 30,
     coins: 8,
     radius: 20,
@@ -231,11 +231,11 @@ const MONSTER_TYPES = {
   shield: {
     type: 'shield',
     name: '護盾無人機',
-    hp: 75,
-    shield: 60,
-    speed: 58,
+    hp: 85,
+    shield: 85,
+    speed: 62,
     armor: 0,
-    baseDamage: 10,
+    baseDamage: 12,
     score: 28,
     coins: 7,
     radius: 16,
@@ -246,11 +246,11 @@ const MONSTER_TYPES = {
   swarm: {
     type: 'swarm',
     name: '小型蟲群',
-    hp: 34,
+    hp: 38,
     shield: 0,
-    speed: 70,
+    speed: 74,
     armor: 0,
-    baseDamage: 4,
+    baseDamage: 5,
     score: 10,
     coins: 3,
     radius: 11,
@@ -261,11 +261,11 @@ const MONSTER_TYPES = {
   splitter: {
     type: 'splitter',
     name: '細胞分裂史萊姆',
-    hp: 85,
+    hp: 98,
     shield: 0,
-    speed: 60,
+    speed: 64,
     armor: 0,
-    baseDamage: 8,
+    baseDamage: 9,
     score: 26,
     coins: 7,
     radius: 17,
@@ -277,11 +277,11 @@ const MONSTER_TYPES = {
   medic: {
     type: 'medic',
     name: '戰地醫護無人機',
-    hp: 78,
-    shield: 25,
-    speed: 58,
+    hp: 90,
+    shield: 35,
+    speed: 62,
     armor: 0,
-    baseDamage: 8,
+    baseDamage: 9,
     score: 32,
     coins: 10,
     radius: 16,
@@ -293,11 +293,11 @@ const MONSTER_TYPES = {
   stealth: {
     type: 'stealth',
     name: '幽靈潛行者',
-    hp: 88,
+    hp: 100,
     shield: 0,
-    speed: 82,
+    speed: 88,
     armor: 1,
-    baseDamage: 10,
+    baseDamage: 12,
     score: 36,
     coins: 10,
     radius: 14,
@@ -309,9 +309,9 @@ const MONSTER_TYPES = {
   gold_slime: {
     type: 'gold_slime',
     name: '黃金寶藏史萊姆',
-    hp: 95,
-    shield: 25,
-    speed: 96,
+    hp: 105,
+    shield: 35,
+    speed: 102,
     armor: 0,
     baseDamage: 2,
     score: 80,
@@ -324,11 +324,11 @@ const MONSTER_TYPES = {
   phantom: {
     type: 'phantom',
     name: '幻影突襲者',
-    hp: 76,
-    shield: 30,
-    speed: 92,
-    armor: 1,
-    baseDamage: 10,
+    hp: 90,
+    shield: 40,
+    speed: 102,
+    armor: 2,
+    baseDamage: 12,
     score: 35,
     coins: 9,
     radius: 14,
@@ -339,11 +339,11 @@ const MONSTER_TYPES = {
   boss_alpha: {
     type: 'boss_alpha',
     name: 'AI 哨兵領主',
-    hp: 420,
-    shield: 110,
-    speed: 35,
-    armor: 4,
-    baseDamage: 28,
+    hp: 520,
+    shield: 140,
+    speed: 37,
+    armor: 6,
+    baseDamage: 32,
     score: 150,
     coins: 40,
     radius: 27,
@@ -354,11 +354,11 @@ const MONSTER_TYPES = {
   boss_mech: {
     type: 'boss_mech',
     name: '雙核護盾機甲',
-    hp: 560,
-    shield: 200,
-    speed: 33,
-    armor: 5,
-    baseDamage: 34,
+    hp: 680,
+    shield: 260,
+    speed: 35,
+    armor: 7,
+    baseDamage: 38,
     score: 220,
     coins: 50,
     radius: 29,
@@ -369,11 +369,11 @@ const MONSTER_TYPES = {
   boss_omega: {
     type: 'boss_omega',
     name: '終極病毒 Omega',
-    hp: 720,
-    shield: 190,
-    speed: 34,
-    armor: 6,
-    baseDamage: 40,
+    hp: 880,
+    shield: 240,
+    speed: 36,
+    armor: 8,
+    baseDamage: 45,
     score: 350,
     coins: 70,
     radius: 31,
@@ -410,71 +410,71 @@ const WAVES = [
   {
     wave: 2,
     title: '第二波：重裝推進',
-    hint: '鐵甲巨像登場！可切換「💥 等離子重砲」或加高「damage」傷害！',
+    hint: '鐵甲巨像登場！改用「💥 等離子重砲」或「🔀 如果 ＜高血重甲＞」才能穿透厚甲！',
     spawns: [
-      { type: 'fast', count: 4, interval: 1.75 },
-      { type: 'tank', count: 2, interval: 2.8 }
+      { type: 'fast', count: 5, interval: 1.45 },
+      { type: 'tank', count: 3, interval: 2.3 }
     ]
   },
   {
     wave: 3,
     title: '第三波：能量護盾與黃金史萊姆',
-    hint: '紫盾無人機登場！用「⚡ 雷射」或「🔀 如果 ＜有護盾＞」快速破盾賺金幣！',
+    hint: '紫盾無人機會反彈一半非對口傷害！用「⚡ 雷射」或「🔀 如果 ＜有護盾＞」快速破盾！',
     spawns: [
-      { type: 'shield', count: 3, interval: 2.2 },
+      { type: 'shield', count: 4, interval: 1.8 },
       { type: 'gold_slime', count: 1, interval: 1.5 },
-      { type: 'fast', count: 3, interval: 1.6 }
+      { type: 'fast', count: 4, interval: 1.35 }
     ]
   },
   {
     wave: 4,
     title: '第四波：細胞分裂潮',
-    hint: '「⛓️ 連鎖閃電 / 💥 重砲 / 📡 掃描 N 隻」可防止史萊姆分裂！',
+    hint: '沒用「⛓️ 閃電 / 💥 重砲 / 📡 掃描 N 隻」消滅分裂體，死後會多變 2 隻！',
     spawns: [
-      { type: 'splitter', count: 3, interval: 2.0 },
-      { type: 'swarm', count: 6, interval: 1.15 },
-      { type: 'tank', count: 1, interval: 2.4 }
+      { type: 'splitter', count: 4, interval: 1.65 },
+      { type: 'swarm', count: 8, interval: 0.9 },
+      { type: 'tank', count: 2, interval: 2.1 }
     ]
   },
   {
     wave: 5,
     title: '第五波：哨兵領主登場',
-    hint: '補師機＋BOSS 來襲！加上「🔀 如果 ＜是BOSS＞」優先集火！',
+    hint: '補師機＋BOSS 來襲！加上「🔀 如果 ＜是BOSS＞」＋重砲/雷射分工才守得住！',
     spawns: [
-      { type: 'medic', count: 2, interval: 2.4 },
-      { type: 'shield', count: 3, interval: 1.9 },
-      { type: 'boss_alpha', count: 1, interval: 2.6 }
+      { type: 'medic', count: 3, interval: 2.0 },
+      { type: 'shield', count: 4, interval: 1.6 },
+      { type: 'boss_alpha', count: 1, interval: 2.4 }
     ]
   },
   {
     wave: 6,
     title: '第六波：幽靈潛行突襲',
-    hint: '換一座「❄️ 冰霜彈」就能把潛行怪緩速＋顯形！',
+    hint: '幽靈潛行怪減傷 65%！一定要靠「❄️ 冰霜彈」顯形或放在後防區攔截！',
     spawns: [
-      { type: 'stealth', count: 4, interval: 1.65 },
-      { type: 'phantom', count: 3, interval: 1.5 },
-      { type: 'gold_slime', count: 1, interval: 1.4 }
+      { type: 'stealth', count: 5, interval: 1.4 },
+      { type: 'phantom', count: 4, interval: 1.25 },
+      { type: 'gold_slime', count: 1, interval: 1.3 }
     ]
   },
   {
     wave: 7,
     title: '第七波：雙核護盾機甲',
-    hint: '多座砲塔套用「🧩 我的函式」省算力，還能順便放 EMP 冰封技能！',
+    hint: '用「🧩 共用模組」省算力同時養 4 座塔，才能打穿機甲的 260 護盾＋重甲！',
     spawns: [
-      { type: 'tank', count: 3, interval: 2.0 },
-      { type: 'shield', count: 4, interval: 1.7 },
-      { type: 'boss_mech', count: 1, interval: 2.5 }
+      { type: 'tank', count: 4, interval: 1.75 },
+      { type: 'shield', count: 5, interval: 1.45 },
+      { type: 'boss_mech', count: 1, interval: 2.3 }
     ]
   },
   {
     wave: 8,
     title: '第八波：終極 Omega 決戰',
-    hint: '最終決戰！把 4 座砲塔全力啟動＋金幣技能放出來守住基地！',
+    hint: '最終決戰！破盾＋穿甲＋冰凍控制＋基地技能全上！',
     spawns: [
-      { type: 'phantom', count: 4, interval: 1.35 },
-      { type: 'shield', count: 4, interval: 1.6 },
-      { type: 'tank', count: 3, interval: 2.0 },
-      { type: 'boss_omega', count: 1, interval: 2.5 }
+      { type: 'phantom', count: 5, interval: 1.15 },
+      { type: 'shield', count: 5, interval: 1.4 },
+      { type: 'tank', count: 4, interval: 1.75 },
+      { type: 'boss_omega', count: 1, interval: 2.2 }
     ]
   }
 ];
