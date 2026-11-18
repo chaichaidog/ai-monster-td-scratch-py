@@ -2035,3 +2035,56 @@ input[type="range"] {
   font-weight: 700;
 }
 
+.beginner-guide-card {
+  background: linear-gradient(90deg, #fefce8, #ecfeff);
+  border: 1.5px solid rgba(217, 119, 6, 0.45);
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+}
+
+.beginner-guide-card.collapsed .guide-step {
+  display: none;
+}
+
+.beginner-guide-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.beginner-guide-steps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+.guide-title {
+  font-weight: 900;
+  color: #b45309;
+}
+
+.guide-step {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.beginner-guide-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.game-shell.mode-coding #btn-confirm-code,
+.game-shell.mode-coding #btn-goto-coding {
+  display: none;
+}
+

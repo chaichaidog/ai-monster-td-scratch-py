@@ -44,6 +44,8 @@ test('HTTP endpoints and teacher login API respond properly', async () => {
     assert.ok(homeHtml.includes('btn-confirm-code'));
     assert.ok(homeHtml.includes('coding-enemy-intel'));
     assert.ok(homeHtml.includes('coding-locked-banner'));
+    assert.ok(homeHtml.includes('beginner-guide-card'));
+    assert.ok(homeHtml.includes('btn-fill-starter'));
     assert.ok(homeHtml.includes('scratch-trash-banner'));
     assert.ok(homeHtml.includes('feedback-form-box'));
     assert.ok(homeHtml.includes('btn-submit-feedback'));

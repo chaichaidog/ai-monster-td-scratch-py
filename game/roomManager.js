@@ -25,8 +25,8 @@ const {
 } = require('./engine');
 
 const TURN_DURATION_SECONDS = 45;
-const PREP_DURATION_SOLO_SEC = 45;
-const PREP_DURATION_COOP_SEC = 60;
+const PREP_DURATION_SOLO_SEC = 60;
+const PREP_DURATION_COOP_SEC = 75;
 
 class RoomManager {
   constructor() {
@@ -79,9 +79,11 @@ class RoomManager {
       ? Math.min(300, Math.round(Number(turnDuration)))
       : defaultTurnSec;
     const defaultPrepSec = validMaxPlayers >= 2 ? PREP_DURATION_COOP_SEC : PREP_DURATION_SOLO_SEC;
-    const validPrepSec = prepDuration !== null && prepDuration !== undefined && Number(prepDuration) >= 1
+    const hasCustomPrep = prepDuration !== null && prepDuration !== undefined && Number(prepDuration) >= 1;
+    const validPrepSec = hasCustomPrep
       ? Math.min(300, Number(prepDuration))
       : defaultPrepSec;
+    const initialWave1PrepSec = hasCustomPrep ? validPrepSec : (validPrepSec + 30);
     const validTimeLimit = Math.max(60, Number(timeLimitSeconds) || TIMED_ENDLESS_DURATION_SEC);
     const roomCode = this.normalizeCode(code) || this.generateRoomCode(validGrade);
 
@@ -120,8 +122,9 @@ class RoomManager {
       turnTimeLeft: validTurnSec,
       wavePhase: 'prep', // 'prep' | 'combat'
       codeLocked: false,
+      hasCustomPrep,
       prepDuration: validPrepSec,
-      prepTimeLeft: validPrepSec,
+      prepTimeLeft: initialWave1PrepSec,
       game: createGameState({
         grade: validGrade,
         maxWaves: Number(maxWaves) || 8,
@@ -442,12 +445,12 @@ class RoomManager {
     room.wavePhase = 'prep';
     room.game.wavePhase = 'prep';
     room.codeLocked = false;
-    room.prepTimeLeft = room.prepDuration;
+    room.prepTimeLeft = room.hasCustomPrep ? room.prepDuration : (room.prepDuration + 30);
     room.players.forEach((p) => { p.prepConfirmed = false; });
     room.activeTurnPlayerId = room.players[0] ? room.players[0].id : null;
     room.turnNumber = 1;
     room.turnTimeLeft = room.turnDuration;
-    this.logAction(room, '系統', `全體進入戰場備戰！請在 ${Math.ceil(room.prepDuration)} 秒內查看敵人情報並寫好積木，確定程式後即鎖定開戰！`);
+    this.logAction(room, '系統', `第 1 場新手教學備戰！有 ${Math.ceil(room.prepTimeLeft)} 秒可看敵人情報、點「✨ 一鍵排好示範積木」或自己排積木後開戰！`);
   }
 
   forceStartRoom(code) {
@@ -993,7 +996,7 @@ class RoomManager {
     room.wavePhase = 'prep';
     room.game.wavePhase = 'prep';
     room.codeLocked = false;
-    room.prepTimeLeft = room.prepDuration;
+    room.prepTimeLeft = room.hasCustomPrep ? room.prepDuration : (room.prepDuration + 30);
     room.players.forEach((p) => {
       p.inCodingView = false;
       p.prepConfirmed = false;

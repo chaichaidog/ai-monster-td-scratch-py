@@ -1684,7 +1684,8 @@ function advanceGameTick(state, dt) {
     state.spawnQueue = buildWaveSpawnQueue(nextWaveNum - 1, gradeCfg, state.difficulty, modifier, state.mapId);
     state.waveIntel = summarizeWaveIntel(state.spawnQueue);
     state.computeBudget += gradeCfg.budgetPerWave;
-    state.coins += 8;
+    state.coins += 12;
+    state.baseHp = Math.min(state.baseMaxHp, state.baseHp + 8);
     state.score += 60;
 
     maybeTriggerRelicChoice(state, nextWaveNum);

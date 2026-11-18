@@ -134,6 +134,10 @@
   const lockedWaveNum = document.getElementById('locked-wave-num');
   const codingPrepCountdown = document.getElementById('coding-prep-countdown');
   const btnCodingConfirm = document.getElementById('btn-coding-confirm');
+  const beginnerGuideCard = document.getElementById('beginner-guide-card');
+  const btnFillStarter = document.getElementById('btn-fill-starter');
+  const btnPeekBattle = document.getElementById('btn-peek-battle');
+  const btnToggleGuide = document.getElementById('btn-toggle-guide');
 
   const battleCanvas = document.getElementById('battle-canvas');
   const skillBar = document.getElementById('skill-bar');
@@ -170,10 +174,11 @@
 
   let currentViewMode = 'battle';
   let mapPickReturnToCoding = false;
-  let showPythonMirror = true;
+  let showPythonMirror = false;
   let lastWaveIntelKey = '';
   let lastAutoCodingWave = null;
   let lastCodeLockedState = null;
+  let guideManuallyToggled = false;
 
   let feedbackRating = 5;
   const feedbackSelectedTags = new Set();
@@ -802,6 +807,7 @@
     lastWaveIntelKey = '';
     lastAutoCodingWave = null;
     lastCodeLockedState = null;
+    guideManuallyToggled = false;
     lastRenderedRelicId = null;
     lastRenderedChestQuizId = null;
     lastRelicsStripKey = '';
@@ -862,8 +868,62 @@
     });
   }
 
+  function getStarterTemplateForTurret(turretId) {
+    const uid = () => `st_${turretId}_${Math.random().toString(36).slice(2, 6)}`;
+    if (turretId === 'T2') {
+      return [
+        { id: uid(), type: 'set_weapon', weapon: 'frost' },
+        { id: uid(), type: 'set_var', varName: 'damage', op: 'set', value: 24 },
+        { id: uid(), type: 'loop', loopMode: 'multi', count: 2 }
+      ];
+    }
+    if (turretId === 'T3') {
+      return [
+        { id: uid(), type: 'set_weapon', weapon: 'chain' },
+        { id: uid(), type: 'set_var', varName: 'damage', op: 'set', value: 25 },
+        { id: uid(), type: 'loop', loopMode: 'burst', count: 2 }
+      ];
+    }
+    if (turretId === 'T4') {
+      return [
+        { id: uid(), type: 'set_var', varName: 'damage', op: 'set', value: 28 },
+        { id: uid(), type: 'if_else', cond: 'near_base', logic: 'none', cond2: 'none', fallback: 'closest_base' },
+        { id: uid(), type: 'loop', loopMode: 'burst', count: 2 }
+      ];
+    }
+    return [
+      { id: uid(), type: 'set_var', varName: 'damage', op: 'set', value: 25 },
+      { id: uid(), type: 'loop', loopMode: 'burst', count: 2 }
+    ];
+  }
+
+  function fillStarterBlocksForTurret() {
+    if (!roomState || !roomState.game) return;
+    if (!canEditBlocks() || !isMyTurn()) {
+      showToast('目前非你編輯或本波已鎖定', 3200);
+      return;
+    }
+    const targetId = selectedTurretId || 'T1';
+    workspaceBlocks = Transpiler.sanitizeBlocks(getStarterTemplateForTurret(targetId));
+    dirtyDraft = true;
+    deployErrorMsg = '';
+    lastRenderedBlocksKey = '';
+    renderWorkspaceBlocks(true);
+    updateScratchPreview();
+    sound.ensureContext();
+    sound.playBlockSnap();
+    deployCurrentTurretBlocks(false);
+    showToast(`✨ 已幫你排好 ${targetId} 示範積木！你可以改數字玩玩看，或直接按「確定程式」開戰！`, 4500);
+  }
+
   function triggerConfirmWaveCode() {
     if (!roomState || !roomState.game) return;
+    const allEmpty = Array.isArray(roomState.game.turrets) && roomState.game.turrets.every((t) => !t.active);
+    if (!dirtyDraft && workspaceBlocks.length === 0 && roomState.game.wave === 1 && allEmpty) {
+      setViewMode('coding', { syncServer: false });
+      showToast('⚠️ 4 座砲塔都還是空的喔！先按「✨ 一鍵排好示範積木」或自己放積木再確定開戰！', 4800);
+      return;
+    }
     if (dirtyDraft && canEditBlocks() && isMyTurn() && !deployInFlight) {
       flushWorkspaceInputs();
       setMapPickMode(null);
@@ -902,6 +962,20 @@
 
   if (btnConfirmCode) btnConfirmCode.addEventListener('click', triggerConfirmWaveCode);
   if (btnCodingConfirm) btnCodingConfirm.addEventListener('click', triggerConfirmWaveCode);
+  if (btnFillStarter) btnFillStarter.addEventListener('click', fillStarterBlocksForTurret);
+  if (btnPeekBattle) {
+    btnPeekBattle.addEventListener('click', () => {
+      setMapPickMode(null);
+      setViewMode('battle');
+    });
+  }
+  if (btnToggleGuide && beginnerGuideCard) {
+    btnToggleGuide.addEventListener('click', () => {
+      guideManuallyToggled = true;
+      const collapsed = beginnerGuideCard.classList.toggle('collapsed');
+      btnToggleGuide.textContent = collapsed ? '展開新手說明' : '收合';
+    });
+  }
   if (btnStartWave1) btnStartWave1.addEventListener('click', triggerConfirmWaveCode);
   if (btnOverlayStartWave) btnOverlayStartWave.addEventListener('click', triggerConfirmWaveCode);
   if (btnTestDummy) btnTestDummy.addEventListener('click', triggerSpawnTestDummy);
@@ -935,10 +1009,12 @@
     });
   }
   if (btnTogglePy) {
+    btnTogglePy.textContent = showPythonMirror ? '🐍 隱藏 Python' : '🐍 顯示 Python 對照';
+    if (scratchLayout) scratchLayout.classList.toggle('hide-python', !showPythonMirror);
     btnTogglePy.addEventListener('click', () => {
       showPythonMirror = !showPythonMirror;
       if (scratchLayout) scratchLayout.classList.toggle('hide-python', !showPythonMirror);
-      btnTogglePy.textContent = showPythonMirror ? '🐍 隱藏 Python' : '🐍 顯示 Python';
+      btnTogglePy.textContent = showPythonMirror ? '🐍 隱藏 Python' : '🐍 顯示 Python 對照';
     });
   }
 
@@ -1903,6 +1979,30 @@
     } else if (cfg.loopMode === 'none') {
       scratchDiagnostic.className = 'py-diagnostic';
       scratchDiagnostic.textContent = `⚠️ 缺「🩷 重複迴圈」：只射 3 發就會停 · 算力 ${totalProjected}/${g.computeBudget}`;
+      if (canEditBlocks() && isMyTurn() && typeof document.createElement === 'function') {
+        const quickBtn = document.createElement('button');
+        quickBtn.type = 'button';
+        quickBtn.className = 'btn btn-sm';
+        quickBtn.style.marginLeft = '8px';
+        quickBtn.style.padding = '2px 8px';
+        quickBtn.textContent = '➕ 一鍵補上迴圈';
+        quickBtn.addEventListener('click', () => {
+          workspaceBlocks.push({
+            id: `ql_${Math.random().toString(36).slice(2, 6)}`,
+            type: 'loop',
+            loopMode: 'burst',
+            count: 2
+          });
+          dirtyDraft = true;
+          deployErrorMsg = '';
+          persistDraftProgress(turret.id, workspaceBlocks, true);
+          lastRenderedBlocksKey = '';
+          renderWorkspaceBlocks(true);
+          updateScratchPreview();
+          sound.playBlockSnap();
+        });
+        scratchDiagnostic.appendChild(quickBtn);
+      }
     } else {
       scratchDiagnostic.className = 'py-diagnostic ok';
       const hasFnMaster = Array.isArray(g.relics) && g.relics.includes('fn_master');
@@ -2828,6 +2928,19 @@
     if (codingLockedBanner) {
       codingLockedBanner.classList.toggle('hidden', !isCodeLocked);
       if (lockedWaveNum) lockedWaveNum.textContent = String(g.wave);
+    }
+    if (beginnerGuideCard) {
+      beginnerGuideCard.classList.toggle('hidden', isCodeLocked || g.status !== 'playing');
+      if (!guideManuallyToggled && g.wave >= 2) {
+        beginnerGuideCard.classList.add('collapsed');
+        if (btnToggleGuide) btnToggleGuide.textContent = '展開新手說明';
+      } else if (!guideManuallyToggled && g.wave === 1) {
+        beginnerGuideCard.classList.remove('collapsed');
+        if (btnToggleGuide) btnToggleGuide.textContent = '收合';
+      }
+    }
+    if (btnFillStarter) {
+      btnFillStarter.disabled = !(myTurn && canEditBlocks());
     }
     if (btnModeCoding) {
       btnModeCoding.textContent = isCodeLocked

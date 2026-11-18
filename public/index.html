@@ -146,8 +146,8 @@
       <div id="lobby-players" class="lobby-players"></div>
 
       <div class="alert alert-info" id="lobby-mission-box">
-        <strong>📜 防守任務說明：</strong>
-        將 Scratch 積木拖進工作區（或直接點擊加入），即可移動砲塔、切換閃電/冰霜/重砲武器、設定條件與迴圈；底下會同步閃爍對應的 Python 程式碼！準備好了就按「下一步」！
+        <strong>📜 超簡單 3 步玩法：</strong>
+        ① 進場後先看<strong>敵人情報</strong> → ② 點「<strong>✨ 一鍵排好示範積木</strong>」或從左邊加入積木（記得要有 <strong>🩷 迴圈</strong> 才會連射） → ③ 按「<strong>✅ 確定程式</strong>」開始打怪！（新手第 1 波有 90 秒慢慢看，不會可先看地圖或點一鍵示範！）
       </div>
 
       <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-top: 16px;">
@@ -289,15 +289,30 @@
             <span id="editor-cost-pill" class="badge badge-cyan">算力預估: 0</span>
           </div>
           <div class="coding-actions-bar">
-            <span id="coding-prep-countdown" class="badge badge-amber">⏱️ 限時 45 秒</span>
-            <button id="btn-toggle-py" class="btn btn-sm" type="button">🐍 隱藏 Python</button>
-            <button id="btn-deploy-turret" class="btn btn-primary btn-sm" type="button">🚀 套用積木</button>
-            <button id="btn-apply-and-play" class="btn btn-sm" type="button">🎮 回戰場查看</button>
-            <button id="btn-coding-confirm" class="btn btn-emerald btn-sm" type="button">✅ 確定程式・鎖定開戰</button>
+            <span id="coding-prep-countdown" class="badge badge-amber">⏱️ 限時 90 秒</span>
+            <button id="btn-toggle-py" class="btn btn-sm" type="button">🐍 顯示 Python 對照</button>
+            <button id="btn-deploy-turret" class="btn btn-primary btn-sm" type="button">💾 套用積木</button>
+            <button id="btn-apply-and-play" class="btn btn-sm" type="button">🗺️ 看地圖 / 試射</button>
+            <button id="btn-coding-confirm" class="btn btn-emerald btn-sm" type="button">✅ 確定程式・開始打怪</button>
           </div>
         </div>
 
         <div id="coding-enemy-intel" class="enemy-intel-strip"></div>
+        <div id="beginner-guide-card" class="beginner-guide-card">
+          <div class="beginner-guide-top">
+            <div class="beginner-guide-steps">
+              <span class="guide-title">🎓 第一次玩？3 秒看懂：</span>
+              <span class="guide-step">① 擋住左邊衝來的怪物別進右邊主基地</span>
+              <span class="guide-step">② 點左方積木幫 <strong>T1/T2</strong> 配火網（一定要放 <strong>🩷 迴圈</strong> 才會連射！）</span>
+              <span class="guide-step">③ 好了按綠色 <strong>「✅ 確定程式・開始打怪」</strong></span>
+            </div>
+            <div class="beginner-guide-btns">
+              <button id="btn-fill-starter" class="btn btn-amber btn-sm" type="button">✨ 一鍵排好示範積木（不會寫點我！）</button>
+              <button id="btn-peek-battle" class="btn btn-sm" type="button">🗺️ 先看地圖</button>
+              <button id="btn-toggle-guide" class="btn btn-sm" type="button">收合</button>
+            </div>
+          </div>
+        </div>
         <div id="coding-locked-banner" class="coding-locked-banner hidden">
           🔒 <strong>本波程式已鎖定！</strong>正在進行第 <span id="locked-wave-num">1</span> 波戰鬥，守完這一波進入下一波時才會重新解鎖修改（現在僅供檢視）。
         </div>
@@ -310,7 +325,7 @@
 
         <!-- Tab 1: Wide No-Scroll Scratch Drag & Drop Workspace -->
         <div id="tab-scratch" class="control-box scratch-tab-shell">
-          <div id="scratch-layout" class="scratch-layout">
+          <div id="scratch-layout" class="scratch-layout hide-python">
             <!-- Left: Scratch Block Palette (Also Drag-to-Delete Zone) -->
             <div id="scratch-palette" class="scratch-palette">
               <div id="scratch-trash-banner" class="scratch-trash-banner hidden">
@@ -318,29 +333,29 @@
               </div>
               <div class="scratch-cat-label">🟦 動作與武器</div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="move_to">
-                <span>📍 移動到座標</span><span>＋</span>
+                <span>📍 移動砲塔位置</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="patrol">
-                <span>🛸 來回巡邏</span><span>＋</span>
+                <span>🛸 來回巡邏攔截</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="set_weapon">
-                <span>⚡ 切換武器</span><span>＋</span>
+                <span>⚡ 換武器 (冰/電/重砲)</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟧 變數</div>
+              <div class="scratch-cat-label">🟧 變數（調高傷害/攻速）</div>
               <div class="scratch-palette-item sb-var" draggable="true" data-block-type="set_var_set">
-                <span>📦 變數設為 (=)</span><span>＋</span>
+                <span>📦 改傷害 / 攻速 (=)</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-var" draggable="true" data-block-type="set_var_add">
-                <span>➕ 變數增加 (+=)</span><span>＋</span>
+                <span>➕ 再加高數值 (+=)</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟨 條件</div>
+              <div class="scratch-cat-label">🟨 條件（先打特定怪）</div>
               <div class="scratch-palette-item sb-cond" draggable="true" data-block-type="if_else">
-                <span>🔀 如果 &lt;條件&gt;</span><span>＋</span>
+                <span>🔀 如果 &lt;特殊怪&gt;</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🩷 迴圈</div>
+              <div class="scratch-cat-label">🩷 迴圈（必放！才會連射）</div>
               <div class="scratch-palette-item sb-loop" draggable="true" data-block-type="loop_burst">
                 <span>🔁 重複 N 次連發</span><span>＋</span>
               </div>
@@ -348,9 +363,9 @@
                 <span>📡 掃描 N 隻同時打</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟩 函式</div>
+              <div class="scratch-cat-label">🟩 函式（共用省算力）</div>
               <div class="scratch-palette-item sb-fn" draggable="true" data-block-type="call_fn">
-                <span>🧩 呼叫函式</span><span>＋</span>
+                <span>🧩 套用共用函式</span><span>＋</span>
               </div>
             </div>
 
