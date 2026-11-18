@@ -480,42 +480,285 @@
   });
 
   function getMonsterCounterTip(m) {
-    if (m.isBoss) return '⚠️ 魔王警報：用「如果＜BOSS＞」集中火力並開大招！';
-    if (m.type === 'medic') return '💚 醫療修復師：會持續幫周圍敵軍回血！優先用電漿／連鎖集火清除！';
-    if (m.type === 'stealth') return '👻 隱形突襲者：前半段隱身減傷 50%，用「❄️ 冰霜緩速」打中立刻破隱形！';
-    if (m.type === 'splitter') return '🧬 分裂體：單發擊殺會分裂成 2 隻！用「⚡ 連鎖閃電」或「📡 掃描迴圈」可防分裂！';
-    if (m.type === 'gold_slime') return `🪙 賞金寶怪：打死直接賺 ${m.coins} 金幣，用「如果＜跑超快＞」攔截！`;
-    if (m.shield > 0) return '🛡️ 有能量盾：用「⚡ 連鎖閃電」或「如果＜有護盾＞」快速破盾！';
-    if (m.speed >= 90) return '💨 跑得飛快：建議用「❄️ 冰霜緩速彈」凍住減速！';
-    if (m.hp >= 180) return '🧱 超厚裝甲：搭配「爆裂電漿砲」＋「火力變數增加」硬打！';
-    return '🎯 標準敵軍：一般砲塔射擊即可穩定清除';
+    if (m.isBoss) return '🔥 <BOSS> 集火＋放技能';
+    if (m.type === 'medic') return '⚡ 先殺補師（會幫人補血）';
+    if (m.type === 'stealth') return '❄️ 冰霜彈打中立刻顯形';
+    if (m.type === 'phantom') return '❄️ 冰霜減速攔截衝鋒';
+    if (m.type === 'splitter') return '⛓️ 閃電 / 📡 掃描 防分裂';
+    if (m.type === 'swarm') return '⛓️ 閃電 / 💥 重砲 範圍清';
+    if (m.type === 'gold_slime') return '⚡ 攔截賺高金幣！';
+    if (m.shield > 0) return '⚡ 雷射×2 / 🔀 <有護盾>';
+    if (m.armor >= 3) return '💥 重砲 / 🔀 <高血重甲>';
+    if (m.speed >= 75) return '❄️ 冰霜減速 / 高攻速';
+    return '🎯 一般連發砲塔即可消滅';
+  }
+
+  function drawMonsterPortrait(canvas, m) {
+    if (!canvas || typeof canvas.getContext !== 'function' || !m) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2 + 2;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Bright pastel card backdrop
+    let bgTop = '#eff6ff';
+    let bgBot = '#dbeafe';
+    if (m.isBoss) { bgTop = '#fff1f2'; bgBot = '#fecdd3'; }
+    else if (m.type === 'gold_slime') { bgTop = '#fefce8'; bgBot = '#fef08a'; }
+    else if (m.type === 'medic' || m.type === 'swarm' || m.type === 'splitter') { bgTop = '#ecfdf5'; bgBot = '#d1fae5'; }
+    else if (m.shield > 0 || m.type === 'stealth' || m.type === 'phantom') { bgTop = '#faf5ff'; bgBot = '#e9d5ff'; }
+    else if (m.type === 'tank') { bgTop = '#fff7ed'; bgBot = '#fed7aa'; }
+
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, bgTop);
+    grad.addColorStop(1, bgBot);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Soft ground shadow
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.14)';
+    ctx.beginPath();
+    ctx.ellipse(cx, h - 14, w * 0.28, h * 0.06, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    const col = m.color || '#38bdf8';
+    const r = m.isBoss ? w * 0.29 : (m.type === 'swarm' ? w * 0.15 : w * 0.26);
+
+    // Energy shield ring aura
+    if (m.shield > 0) {
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(168, 85, 247, 0.14)';
+      ctx.fill();
+      ctx.strokeStyle = '#9333ea';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+
+    // Gold slime sparkles or Medic heal ring
+    if (m.type === 'gold_slime') {
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.5;
+      [[-24, -22], [25, -18], [22, 18]].forEach(([sx, sy]) => {
+        ctx.beginPath();
+        ctx.moveTo(sx - 5, sy); ctx.lineTo(sx + 5, sy);
+        ctx.moveTo(sx, sy - 5); ctx.lineTo(sx, sy + 5);
+        ctx.stroke();
+      });
+    } else if (m.type === 'medic') {
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, r + 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Type-specific silhouettes
+    if (m.type === 'swarm') {
+      // Trio of cute mini swarm drones
+      const offsets = [[-15, 8], [15, 8], [0, -14]];
+      offsets.forEach(([ox, oy]) => {
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.fillStyle = col;
+        ctx.strokeStyle = '#0f172a';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(-4, -2, 2.2, 0, Math.PI * 2);
+        ctx.arc(4, -2, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+      ctx.restore();
+      return;
+    }
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#0f172a';
+    ctx.fillStyle = col;
+
+    if (m.type === 'tank' || m.isBoss) {
+      // Octagonal Armored Mech + Horns/Crown for Boss
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const a = (Math.PI / 4) * i + Math.PI / 8;
+        const px = Math.cos(a) * r;
+        const py = Math.sin(a) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Armor band / visor
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(-r * 0.62, -r * 0.25, r * 1.24, r * 0.34);
+      ctx.fillStyle = m.isBoss ? '#f43f5e' : '#fde047';
+      ctx.beginPath();
+      ctx.arc(-r * 0.28, -r * 0.08, 4, 0, Math.PI * 2);
+      ctx.arc(r * 0.28, -r * 0.08, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (m.isBoss) {
+        // Golden Boss Crown
+        ctx.fillStyle = '#fbbf24';
+        ctx.strokeStyle = '#92400e';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-18, -r + 2);
+        ctx.lineTo(-14, -r - 13);
+        ctx.lineTo(-5, -r - 4);
+        ctx.lineTo(0, -r - 16);
+        ctx.lineTo(5, -r - 4);
+        ctx.lineTo(14, -r - 13);
+        ctx.lineTo(18, -r + 2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else if (m.type === 'stealth' || m.type === 'phantom') {
+      if (m.type === 'stealth') ctx.globalAlpha = 0.72;
+      // Sleek Ninja Dart Jet
+      ctx.beginPath();
+      ctx.moveTo(r * 1.15, 0);
+      ctx.lineTo(-r * 0.95, -r * 0.9);
+      ctx.lineTo(-r * 0.38, 0);
+      ctx.lineTo(-r * 0.95, r * 0.9);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(r * 0.2, -4, 3.5, 0, Math.PI * 2);
+      ctx.arc(r * 0.2, 4, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Cute Rounded Slime / Drone (fast, shield, medic, splitter, gold_slime)
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Glossy highlight
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.beginPath();
+      ctx.ellipse(-r * 0.35, -r * 0.38, r * 0.28, r * 0.16, -0.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (m.type === 'medic') {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(-10, -3.5, 20, 7);
+        ctx.fillRect(-3.5, -10, 7, 20);
+      } else if (m.type === 'splitter') {
+        // Dotted division line + 2 nuclei to visualize splitting!
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = '#ecfdf5';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -r + 3);
+        ctx.lineTo(0, r - 3);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#064e3b';
+        ctx.beginPath();
+        ctx.arc(-9, -2, 4, 0, Math.PI * 2);
+        ctx.arc(9, -2, 4, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Eyes
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.arc(-r * 0.3, -2, 4.2, 0, Math.PI * 2);
+        ctx.arc(r * 0.3, -2, 4.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(-r * 0.3 - 1.3, -3.5, 1.5, 0, Math.PI * 2);
+        ctx.arc(r * 0.3 - 1.3, -3.5, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Speed wind lines for fast
+        if (m.type === 'fast') {
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(-r - 12, -8); ctx.lineTo(-r - 3, -8);
+          ctx.moveTo(-r - 15, 2); ctx.lineTo(-r - 4, 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.restore();
   }
 
   function renderMonsterGuide() {
     if (!meta || !meta.monsterTypes) return;
     monsterGuideGrid.innerHTML = '';
-    Object.values(meta.monsterTypes).forEach((m) => {
+    const monsters = Object.values(meta.monsterTypes);
+    monsters.forEach((m) => {
       const card = document.createElement('div');
-      card.className = 'monster-guide-card';
+      card.className = `monster-guide-card${m.isBoss ? ' is-boss' : ''}`;
+
+      const avatarBox = document.createElement('div');
+      avatarBox.className = 'monster-avatar-box';
+      const canvas = document.createElement('canvas');
+      canvas.className = 'monster-portrait';
+      canvas.width = 112;
+      canvas.height = 112;
+      drawMonsterPortrait(canvas, m);
+      const tagBadge = document.createElement('span');
+      tagBadge.className = 'monster-tag-pill';
+      tagBadge.textContent = m.tag || '一般';
+      avatarBox.appendChild(canvas);
+      avatarBox.appendChild(tagBadge);
+
+      const body = document.createElement('div');
+      body.className = 'monster-guide-body';
+
       const title = document.createElement('strong');
-      title.style.color = (m.color === '#fde047' || m.color === '#38bdf8' || m.color === '#4ade80' || m.color === '#34d399')
-        ? '#0f172a'
-        : m.color;
-      title.textContent = `${m.name}（${m.tag}）`;
+      title.style.fontSize = '0.92rem';
+      title.style.color = m.isBoss ? '#be123c' : '#0f172a';
+      title.textContent = m.name;
+
       const stats = document.createElement('div');
-      stats.style.color = '#475569';
-      stats.style.marginTop = '4px';
-      stats.style.fontSize = '0.75rem';
-      stats.textContent = `❤️ 血量 ${m.hp} ｜ 🛡️ 護盾 ${m.shield} ｜ 💨 跑速 ${m.speed} ｜ 🪙 +${m.coins || 5}`;
+      stats.className = 'monster-stat-row';
+      const statItems = [`❤️ ${m.hp}`];
+      if (m.shield > 0) statItems.push(`🛡️ 盾${m.shield}`);
+      if (m.armor > 0) statItems.push(`🧱 甲${m.armor}`);
+      statItems.push(`💨 速${m.speed}`);
+      if (m.coins >= 20) statItems.push(`🪙 +${m.coins}`);
+      statItems.forEach((stText) => {
+        const sp = document.createElement('span');
+        sp.className = 'monster-stat-pill';
+        sp.textContent = stText;
+        stats.appendChild(sp);
+      });
+
       const tip = document.createElement('div');
-      tip.style.color = '#0369a1';
-      tip.style.fontWeight = '700';
-      tip.style.marginTop = '4px';
-      tip.style.fontSize = '0.72rem';
+      tip.className = 'monster-tip-pill';
       tip.textContent = getMonsterCounterTip(m);
-      card.appendChild(title);
-      card.appendChild(stats);
-      card.appendChild(tip);
+
+      body.appendChild(title);
+      body.appendChild(stats);
+      body.appendChild(tip);
+
+      card.appendChild(avatarBox);
+      card.appendChild(body);
       monsterGuideGrid.appendChild(card);
     });
   }
@@ -2754,8 +2997,8 @@
     }
 
     const headText = isPrep
-      ? `👁️ 第 ${g.wave} 波敵人情報（限時調整積木）：`
-      : `⚔️ 第 ${g.wave} 波來襲敵人（程式已鎖定）：`;
+      ? `👁️ 第 ${g.wave} 波來襲：`
+      : `⚔️ 第 ${g.wave} 波交戰中：`;
 
     const populateEl = (el) => {
       el.innerHTML = '';
@@ -2769,18 +3012,23 @@
         chip.className = 'enemy-intel-chip';
         chip.title = e.tip || '';
 
-        const dot = document.createElement('span');
-        dot.className = 'enemy-dot';
-        dot.style.background = e.color || '#3b82f6';
-        chip.appendChild(dot);
+        const miniIcon = document.createElement('canvas');
+        miniIcon.width = 48;
+        miniIcon.height = 48;
+        miniIcon.style.width = '22px';
+        miniIcon.style.height = '22px';
+        miniIcon.style.borderRadius = '6px';
+        miniIcon.style.flexShrink = '0';
+        drawMonsterPortrait(miniIcon, e);
+        chip.appendChild(miniIcon);
 
         const name = document.createElement('strong');
         name.textContent = `${e.name} ×${e.count}`;
         chip.appendChild(name);
 
-        const metaParts = [`血${e.hp}`];
-        if (e.shield > 0) metaParts.push(`盾${e.shield}`);
-        if (e.armor > 0) metaParts.push(`甲${e.armor}`);
+        const metaParts = [`❤️${e.hp}`];
+        if (e.shield > 0) metaParts.push(`🛡️${e.shield}`);
+        if (e.armor > 0) metaParts.push(`🧱甲${e.armor}`);
         if (e.tip) metaParts.push(e.tip.replace(/^克制：/, '💡'));
         const metaEl = document.createElement('span');
         metaEl.className = 'enemy-intel-meta';

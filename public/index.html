@@ -418,38 +418,15 @@
           </div>
         </div>
 
-        <!-- Tab 3: Monster Intel & Cheat Sheet -->
+        <!-- Tab 3: Illustrated Monster Bestiary & Weapon Counters -->
         <div id="tab-guide" class="control-box hidden">
-          <div class="form-label">👾 怪物弱點一覽</div>
-          <div id="monster-guide-grid" class="monster-guide-grid" style="margin-bottom: 12px;"></div>
-          <div class="form-label">📚 積木對照卡</div>
-          <div class="cheat-sheet-list">
-            <div class="cheat-row">
-              <span class="cheat-pill sb-motion">📍 移動／巡邏</span>
-              <span class="cheat-desc">移動砲塔位置或來回巡邏</span>
-              <code class="cheat-py">turret.move_to(390, 270)</code>
-            </div>
-            <div class="cheat-row">
-              <span class="cheat-pill sb-var">📦 變數設為／增加</span>
-              <span class="cheat-desc">調整傷害、攻速或射程</span>
-              <code class="cheat-py">damage = 30 / damage += 10</code>
-            </div>
-            <div class="cheat-row">
-              <span class="cheat-pill sb-cond">🔀 如果…那麼</span>
-              <span class="cheat-desc">優先打護盾怪、快怪或 BOSS</span>
-              <code class="cheat-py">if monster.shield &gt; 0:</code>
-            </div>
-            <div class="cheat-row">
-              <span class="cheat-pill sb-loop">🔁 重複 N 次</span>
-              <span class="cheat-desc">連續射擊或同時掃描多隻怪</span>
-              <code class="cheat-py">for i in range(3):</code>
-            </div>
-            <div class="cheat-row">
-              <span class="cheat-pill sb-fn">🧩 我的函式</span>
-              <span class="cheat-desc">存成共用模組，多塔一鍵套用</span>
-              <code class="cheat-py">def 破盾連發():</code>
-            </div>
+          <div class="weapon-guide-strip">
+            <span class="wg-chip wg-laser">⚡ <strong>雷射</strong>：免費·對紫盾傷×2</span>
+            <span class="wg-chip wg-frost">❄️ <strong>冰霜</strong>：讓怪變慢·破隱形</span>
+            <span class="wg-chip wg-chain">⛓️ <strong>閃電</strong>：一次電3隻·防分裂</span>
+            <span class="wg-chip wg-plasma">💥 <strong>重砲</strong>：範圍爆炸·專破重甲</span>
           </div>
+          <div id="monster-guide-grid" class="monster-guide-grid"></div>
         </div>
       </div>
     </div>
