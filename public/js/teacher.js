@@ -686,8 +686,9 @@
 
       const ratingLine = document.createElement('div');
       ratingLine.style.fontSize = '0.84rem';
+      ratingLine.style.fontWeight = '700';
       ratingLine.style.margin = '6px 0';
-      ratingLine.style.color = '#fde047';
+      ratingLine.style.color = '#b45309';
       ratingLine.textContent = `${'★'.repeat(fb.rating || 5)}${'☆'.repeat(Math.max(0, 5 - (fb.rating || 5)))} (${fb.rating}/5) · 最懂：${conceptMap[fb.favoriteConcept] || '未填'} · ${fb.submittedAt || ''}`;
 
       card.appendChild(head);
@@ -816,7 +817,8 @@
         if (t.active && t.loopMode === 'none') {
           const warn = document.createElement('div');
           warn.style.fontSize = '0.75rem';
-          warn.style.color = '#fbbf24';
+          warn.style.fontWeight = '700';
+          warn.style.color = '#b45309';
           warn.textContent = '💡 給老師除錯提醒：這座砲塔沒有放「🩷 重複迴圈」，所以射完 3 發就會停火！';
           card.appendChild(warn);
         }

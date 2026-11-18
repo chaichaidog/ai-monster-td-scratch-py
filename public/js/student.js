@@ -493,15 +493,18 @@
       const card = document.createElement('div');
       card.className = 'monster-guide-card';
       const title = document.createElement('strong');
-      title.style.color = m.color;
+      title.style.color = (m.color === '#fde047' || m.color === '#38bdf8' || m.color === '#4ade80' || m.color === '#34d399')
+        ? '#0f172a'
+        : m.color;
       title.textContent = `${m.name}（${m.tag}）`;
       const stats = document.createElement('div');
-      stats.style.color = '#cbd5e1';
+      stats.style.color = '#475569';
       stats.style.marginTop = '4px';
       stats.style.fontSize = '0.75rem';
       stats.textContent = `❤️ 血量 ${m.hp} ｜ 🛡️ 護盾 ${m.shield} ｜ 💨 跑速 ${m.speed} ｜ 🪙 +${m.coins || 5}`;
       const tip = document.createElement('div');
-      tip.style.color = '#7dd3fc';
+      tip.style.color = '#0369a1';
+      tip.style.fontWeight = '700';
       tip.style.marginTop = '4px';
       tip.style.fontSize = '0.72rem';
       tip.textContent = getMonsterCounterTip(m);
@@ -573,7 +576,7 @@
       btn.disabled = !canUse;
       if (cd > 0) {
         statusEl.textContent = `⏳ ${cd.toFixed(1)}s`;
-        statusEl.style.color = '#fca5a5';
+        statusEl.style.color = '#be123c';
       } else if (!enoughCoins) {
         statusEl.textContent = `缺 ${skill.coinCost - game.coins}🪙`;
         statusEl.style.color = 'var(--text-muted)';
@@ -582,7 +585,7 @@
         statusEl.style.color = 'var(--text-muted)';
       } else {
         statusEl.textContent = '⚡ 可施放';
-        statusEl.style.color = '#34d399';
+        statusEl.style.color = '#047857';
       }
     });
   }
@@ -2385,7 +2388,7 @@
       const wShort = meta && meta.weapons && meta.weapons[fn.weapon] ? meta.weapons[fn.weapon].short : fn.weapon;
       const desc = document.createElement('div');
       desc.style.fontSize = '0.75rem';
-      desc.style.color = '#cbd5e1';
+      desc.style.color = '#475569';
       desc.style.marginTop = '4px';
       desc.textContent = `${wShort} ｜ 💥 傷害 ${fn.damage} ｜ ⏱️ 攻速 ${fn.fireRate} ｜ ${formatFnLoopText(fn)}`;
 
@@ -2519,17 +2522,18 @@
             const titleEl = document.createElement('div');
             titleEl.style.fontWeight = '900';
             titleEl.style.fontSize = '1.05rem';
-            titleEl.style.color = '#fde047';
+            titleEl.style.color = '#b45309';
             titleEl.textContent = opt.name;
             const descEl = document.createElement('div');
             descEl.style.fontSize = '0.86rem';
-            descEl.style.color = '#e2e8f0';
+            descEl.style.color = '#1e293b';
             descEl.style.marginTop = '6px';
             descEl.style.lineHeight = '1.45';
             descEl.textContent = opt.desc;
             const tagEl = document.createElement('div');
             tagEl.style.fontSize = '0.75rem';
-            tagEl.style.color = '#38bdf8';
+            tagEl.style.fontWeight = '700';
+            tagEl.style.color = '#0369a1';
             tagEl.style.marginTop = '8px';
             tagEl.textContent = `👉 ${opt.badge || opt.tag || '永久強化'}`;
             card.appendChild(titleEl);
