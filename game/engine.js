@@ -133,17 +133,17 @@ function sanitizeTurretConfig(raw = {}, base = {}) {
 
 function calcTurretCost(cfg, relics = []) {
   if (cfg && cfg.active === false) return 0;
-  const dpsPart = cfg.damage * cfg.fireRate * 0.8;
+  const dpsPart = cfg.damage * cfg.fireRate * 0.72;
   const rangePart = Math.max(0, cfg.range - 120) * 0.12;
   const weaponPart = WEAPONS[cfg.weapon] ? WEAPONS[cfg.weapon].cost : 0;
   let loopPart = 0;
   if (cfg.loopMode === 'burst' && cfg.loopCount > 1) {
-    loopPart = (cfg.loopCount - 1) * 5;
+    loopPart = (cfg.loopCount - 1) * 4;
   } else if (cfg.loopMode === 'multi' && cfg.loopCount > 1) {
-    loopPart = (cfg.loopCount - 1) * 6;
+    loopPart = (cfg.loopCount - 1) * 5;
   }
-  const overDmgTax = Math.max(0, cfg.damage - 35) * 1.4;
-  const overRateTax = Math.max(0, cfg.fireRate - 2.0) * 18;
+  const overDmgTax = Math.max(0, cfg.damage - 50) * 1.2;
+  const overRateTax = Math.max(0, cfg.fireRate - 2.2) * 14;
   const rawCost = dpsPart + rangePart + loopPart + weaponPart + overDmgTax + overRateTax;
   const hasFnMaster = Array.isArray(relics) && relics.includes('fn_master');
   const fnDiscount = cfg && cfg.boundFunctionId ? (hasFnMaster ? 0.7 : 0.85) : 1.0;

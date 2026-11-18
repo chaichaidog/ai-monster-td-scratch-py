@@ -521,7 +521,7 @@ test('T1-T4 start empty, no-loop turrets stop after 3 trial shots, and fn discou
   // 1. All 4 turrets start empty & inactive with 0 compute used and welcoming starter coins/budget
   assert.equal(gs.coins, 25);
   assert.equal(gs.computeUsed, 0);
-  assert.equal(gs.computeBudget, 140);
+  assert.equal(gs.computeBudget, 150);
   for (const t of gs.turrets) {
     assert.equal(t.blocks.length, 0);
     assert.equal(t.active, false);

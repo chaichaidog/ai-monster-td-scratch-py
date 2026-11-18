@@ -107,8 +107,8 @@ const GRADES = {
     allowedStudentGrades: ['G7'],
     hpMultiplier: 0.72,
     speedMultiplier: 0.84,
-    startingBudget: 140,
-    budgetPerWave: 24,
+    startingBudget: 150,
+    budgetPerWave: 25,
     startingCoins: 25,
     baseMaxHp: 120
   },
@@ -119,7 +119,7 @@ const GRADES = {
     allowedStudentGrades: ['G8'],
     hpMultiplier: 0.82,
     speedMultiplier: 0.88,
-    startingBudget: 130,
+    startingBudget: 125,
     budgetPerWave: 22,
     startingCoins: 20,
     baseMaxHp: 120
@@ -131,7 +131,7 @@ const GRADES = {
     allowedStudentGrades: ['G9'],
     hpMultiplier: 0.9,
     speedMultiplier: 0.9,
-    startingBudget: 125,
+    startingBudget: 120,
     budgetPerWave: 20,
     startingCoins: 20,
     baseMaxHp: 120
@@ -143,7 +143,7 @@ const GRADES = {
     allowedStudentGrades: ['G8', 'G9'],
     hpMultiplier: 0.85,
     speedMultiplier: 0.89,
-    startingBudget: 130,
+    startingBudget: 125,
     budgetPerWave: 22,
     startingCoins: 20,
     baseMaxHp: 120
@@ -480,13 +480,13 @@ const WAVES = [
 ];
 
 const CONDITION_OPTIONS = {
-  none: { id: 'none', label: '無特殊條件 (直接用預設目標)', codeExpr: 'False', bonusText: '' },
-  has_shield: { id: 'has_shield', label: '怪物有能量護盾 (shield > 0)', codeExpr: 'monster.shield > 0', bonusText: '破盾傷害 +50%' },
-  near_base: { id: 'near_base', label: '怪物快到基地 (progress > 65%)', codeExpr: 'monster.progress > 0.65', bonusText: '緊急攔截 射速 +25%' },
-  high_hp: { id: 'high_hp', label: '怪物高血量重甲 (hp >= 120)', codeExpr: 'monster.hp >= 120', bonusText: '破甲傷害 +35%' },
-  fast_speed: { id: 'fast_speed', label: '怪物高速移動 (speed >= 75)', codeExpr: 'monster.speed >= 75', bonusText: '命中附帶 25% 減速' },
-  is_boss: { id: 'is_boss', label: '目標為 BOSS (is_boss == True)', codeExpr: 'monster.is_boss == True', bonusText: '弱點集火傷害 +30%' },
-  crowd_3: { id: 'crowd_3', label: '射程內怪物 >= 3 隻', codeExpr: 'len(enemies_in_range) >= 3', bonusText: '群戰增幅傷害 +20%' }
+  none: { id: 'none', label: '無條件 (直接射擊)', codeExpr: 'False', bonusText: '' },
+  has_shield: { id: 'has_shield', label: '有護盾的怪 (破盾+50%)', codeExpr: 'monster.shield > 0', bonusText: '破盾傷害 +50%' },
+  near_base: { id: 'near_base', label: '快進基地了 (緊急+25%速)', codeExpr: 'monster.progress > 0.65', bonusText: '緊急攔截 射速 +25%' },
+  high_hp: { id: 'high_hp', label: '高血重甲怪 (破甲+35%)', codeExpr: 'monster.hp >= 120', bonusText: '破甲傷害 +35%' },
+  fast_speed: { id: 'fast_speed', label: '跑超快的怪 (命中減速)', codeExpr: 'monster.speed >= 75', bonusText: '命中附帶 25% 減速' },
+  is_boss: { id: 'is_boss', label: '大魔王 BOSS (集火+30%)', codeExpr: 'monster.is_boss == True', bonusText: '弱點集火傷害 +30%' },
+  crowd_3: { id: 'crowd_3', label: '附近滿 3 隻怪 (+20%傷)', codeExpr: 'len(enemies_in_range) >= 3', bonusText: '群戰增幅傷害 +20%' }
 };
 
 const FALLBACK_TARGETS = {

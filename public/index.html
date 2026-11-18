@@ -290,25 +290,22 @@
           </div>
           <div class="coding-actions-bar">
             <span id="coding-prep-countdown" class="badge badge-amber">⏱️ 限時 90 秒</span>
-            <button id="btn-toggle-py" class="btn btn-sm" type="button">🐍 顯示 Python 對照</button>
-            <button id="btn-deploy-turret" class="btn btn-primary btn-sm" type="button">💾 套用積木</button>
-            <button id="btn-apply-and-play" class="btn btn-sm" type="button">🗺️ 看地圖 / 試射</button>
-            <button id="btn-coding-confirm" class="btn btn-emerald btn-sm" type="button">✅ 確定程式・開始打怪</button>
+            <button id="btn-deploy-turret" class="btn btn-primary btn-sm" type="button">💾 套用這座塔</button>
+            <button id="btn-apply-and-play" class="btn btn-sm" type="button">🗺️ 全螢幕戰場</button>
+            <button id="btn-coding-confirm" class="btn btn-emerald btn-sm" type="button">🚀 確定程式・開始打怪！</button>
           </div>
         </div>
 
-        <div id="coding-enemy-intel" class="enemy-intel-strip"></div>
         <div id="beginner-guide-card" class="beginner-guide-card">
           <div class="beginner-guide-top">
             <div class="beginner-guide-steps">
-              <span class="guide-title">🎓 第一次玩？3 秒看懂：</span>
-              <span class="guide-step">① 擋住左邊衝來的怪物別進右邊主基地</span>
-              <span class="guide-step">② 點左方積木幫 <strong>T1/T2</strong> 配火網（一定要放 <strong>🩷 迴圈</strong> 才會連射！）</span>
-              <span class="guide-step">③ 好了按綠色 <strong>「✅ 確定程式・開始打怪」</strong></span>
+              <span class="guide-title">👋 第一次玩？</span>
+              <span class="guide-step">① 右邊能直接看地圖，選左邊積木或點下方懶人配裝</span>
+              <span class="guide-step">② 好了按綠色 <strong>「🚀 確定程式・開始打怪！」</strong></span>
             </div>
             <div class="beginner-guide-btns">
-              <button id="btn-fill-starter" class="btn btn-amber btn-sm" type="button">✨ 一鍵排好示範積木（不會寫點我！）</button>
-              <button id="btn-peek-battle" class="btn btn-sm" type="button">🗺️ 先看地圖</button>
+              <button id="btn-fill-starter" class="btn btn-amber btn-sm" type="button">✨ 一鍵幫本塔配裝</button>
+              <button id="btn-peek-battle" class="btn btn-sm" type="button">🗺️ 全螢幕看地圖</button>
               <button id="btn-toggle-guide" class="btn btn-sm" type="button">收合</button>
             </div>
           </div>
@@ -319,19 +316,19 @@
 
         <div class="code-tabs" style="grid-template-columns: repeat(3, 1fr);">
           <button type="button" class="code-tab active-var" data-tab="scratch">🧱 Scratch 積木</button>
-          <button type="button" class="code-tab" data-tab="fn">🧩 我的函式</button>
-          <button type="button" class="code-tab" data-tab="guide">📖 怪物弱點</button>
+          <button type="button" class="code-tab" data-tab="fn">🧩 共用模組（省算力）</button>
+          <button type="button" class="code-tab" data-tab="guide">📖 怪物弱點圖鑑</button>
         </div>
 
-        <!-- Tab 1: Wide No-Scroll Scratch Drag & Drop Workspace -->
+        <!-- Tab 1: 3-Column Arcade Layout (Palette + Scratch Blocks + Live Interactive Mini-Map!) -->
         <div id="tab-scratch" class="control-box scratch-tab-shell">
-          <div id="scratch-layout" class="scratch-layout hide-python">
+          <div id="scratch-layout" class="scratch-layout">
             <!-- Left: Scratch Block Palette (Also Drag-to-Delete Zone) -->
             <div id="scratch-palette" class="scratch-palette">
               <div id="scratch-trash-banner" class="scratch-trash-banner hidden">
                 🗑️ 拖到這裡放開即可刪除
               </div>
-              <div class="scratch-cat-label">🟦 動作與武器</div>
+              <div class="scratch-cat-label">🟦 移動＆換武器</div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="move_to">
                 <span>📍 移動砲塔位置</span><span>＋</span>
               </div>
@@ -339,56 +336,69 @@
                 <span>🛸 來回巡邏攔截</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-motion" draggable="true" data-block-type="set_weapon">
-                <span>⚡ 換武器 (冰/電/重砲)</span><span>＋</span>
+                <span>⚡ 換武器 (冰/電/炸)</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟧 變數（調高傷害/攻速）</div>
+              <div class="scratch-cat-label">🟧 強化威力＆攻速</div>
               <div class="scratch-palette-item sb-var" draggable="true" data-block-type="set_var_set">
-                <span>📦 改傷害 / 攻速 (=)</span><span>＋</span>
+                <span>💥 設定威力 / 攻速</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-var" draggable="true" data-block-type="set_var_add">
-                <span>➕ 再加高數值 (+=)</span><span>＋</span>
+                <span>➕ 再往上加高數值</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟨 條件（先打特定怪）</div>
+              <div class="scratch-cat-label">🟨 鎖定特定怪</div>
               <div class="scratch-palette-item sb-cond" draggable="true" data-block-type="if_else">
                 <span>🔀 如果 &lt;特殊怪&gt;</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🩷 迴圈（必放！才會連射）</div>
+              <div class="scratch-cat-label">🩷 連射迴圈（必放！）</div>
               <div class="scratch-palette-item sb-loop" draggable="true" data-block-type="loop_burst">
-                <span>🔁 重複 N 次連發</span><span>＋</span>
+                <span>🔁 連打 N 發</span><span>＋</span>
               </div>
               <div class="scratch-palette-item sb-loop" draggable="true" data-block-type="loop_multi">
-                <span>📡 掃描 N 隻同時打</span><span>＋</span>
+                <span>📡 同時打 N 隻</span><span>＋</span>
               </div>
 
-              <div class="scratch-cat-label">🟩 函式（共用省算力）</div>
+              <div class="scratch-cat-label">🟩 共用模組</div>
               <div class="scratch-palette-item sb-fn" draggable="true" data-block-type="call_fn">
-                <span>🧩 套用共用函式</span><span>＋</span>
+                <span>🧩 套用共用模組</span><span>＋</span>
               </div>
             </div>
 
-            <!-- Middle: Spacious Scratch Workspace -->
+            <!-- Middle: Scratch Workspace -->
             <div id="scratch-workspace" class="scratch-workspace">
               <div class="scratch-hat-row">
                 <div class="scratch-hat">🏁 當「砲塔啟動」時</div>
-                <span class="scratch-drag-tip">💡 把右邊積木拖回左側即可刪除</span>
+                <span class="scratch-drag-tip">💡 點「×」或拖回左邊即可刪除</span>
               </div>
               <div id="scratch-blocks-list" style="display: flex; flex-direction: column; gap: 7px;"></div>
             </div>
 
-            <!-- Right: Collapsible Python Mirror -->
-            <div id="python-mirror-col" class="python-mirror-col">
-              <div style="font-size: 0.78rem; color: var(--amber); font-weight: 700; margin-bottom: 6px;">
-                🐍 Python 對照（# 後為中文）
+            <!-- Right: Live Mini-Battlefield Preview + Incoming Enemy Intel (+ Toggleable Python) -->
+            <div id="coding-live-map-col" class="coding-live-map-col">
+              <div class="coding-map-head">
+                <span>🎮 即時戰場（點塔可直接切換）</span>
+                <div style="display: flex; gap: 5px; align-items: center;">
+                  <button id="btn-coding-dummy" class="btn btn-sm" type="button" style="padding: 3px 8px; font-size: 0.74rem;">🧪 試射</button>
+                  <button id="btn-toggle-py" class="btn btn-sm" type="button" style="padding: 3px 8px; font-size: 0.74rem;">🐍 看Python</button>
+                </div>
               </div>
-              <div id="code-preview" class="code-preview" style="white-space: pre-wrap;"></div>
+              <div class="mini-preview-frame">
+                <canvas id="coding-preview-canvas"></canvas>
+              </div>
+              <div id="coding-enemy-intel" class="enemy-intel-strip"></div>
+              <div id="python-mirror-col" class="python-mirror-col hidden">
+                <div style="font-size: 0.76rem; color: var(--amber); font-weight: 700; margin-bottom: 4px;">
+                  🐍 Python 對照
+                </div>
+                <div id="code-preview" class="code-preview" style="white-space: pre-wrap;"></div>
+              </div>
             </div>
           </div>
 
           <div id="scratch-diagnostic" class="py-diagnostic ok" style="margin-top: 8px;">
-            💡 點「＋」或拖進右邊，拖回左邊即可刪除！
+            💡 點左邊彩色積木，或選中間的快速推薦配裝！
           </div>
         </div>
 

@@ -1051,16 +1051,21 @@ button, input, select {
   font-size: 0.78rem;
 }
 
-/* Scratch Visual Block System (Spacious, No-Scroll Layout + Trash Dropzone) */
+/* Scratch Visual Block System (Arcade 3-Column: Palette + Blocks + Live Mini-Map) */
 .scratch-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1.35fr) minmax(260px, 0.95fr);
-  gap: 12px;
+  grid-template-columns: 225px minmax(340px, 1.15fr) minmax(300px, 0.98fr);
+  gap: 10px;
   align-items: stretch;
 }
 
-.scratch-layout.hide-python {
-  grid-template-columns: 280px minmax(0, 1fr);
+@media (max-width: 1060px) {
+  .scratch-layout {
+    grid-template-columns: 220px 1fr;
+  }
+  .coding-live-map-col {
+    grid-column: 1 / -1;
+  }
 }
 
 .scratch-layout.hide-python .python-mirror-col {
@@ -2097,7 +2102,112 @@ input[type="range"] {
 }
 
 .game-shell.mode-coding #btn-confirm-code,
-.game-shell.mode-coding #btn-goto-coding {
+.game-shell.mode-coding #btn-goto-coding,
+.game-shell.mode-coding #turn-banner.solo-mode,
+.game-shell.mode-coding #turn-banner.my-turn:not(.turn-flash) {
   display: none;
+}
+
+.coding-live-map-col {
+  background: #f8fafc;
+  border: 1.5px solid rgba(2, 132, 199, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.coding-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.79rem;
+  font-weight: 800;
+  color: #0369a1;
+}
+
+.mini-preview-frame {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1.5px solid rgba(2, 132, 199, 0.28);
+  background: #e8f2ff;
+}
+
+.mini-preview-frame canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: pointer;
+}
+
+.coding-live-map-col .enemy-intel-strip {
+  margin-bottom: 0;
+  padding: 6px 8px;
+}
+
+.empty-starter-box {
+  background: #ffffff;
+  border: 1.5px dashed rgba(2, 132, 199, 0.35);
+  border-radius: 12px;
+  padding: 14px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.starter-cards-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .starter-cards-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.starter-preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(2, 132, 199, 0.28);
+  background: linear-gradient(180deg, #ffffff, #f0f9ff);
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.starter-preset-btn:hover {
+  transform: translateY(-2px);
+  border-color: var(--cyan);
+  box-shadow: 0 6px 14px rgba(2, 132, 199, 0.16);
+}
+
+.sb-step-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.85);
+  color: #0f172a;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 0.86rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sb-step-btn:hover:not(:disabled) {
+  background: #ffffff;
 }
 
